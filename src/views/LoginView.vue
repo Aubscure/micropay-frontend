@@ -11,16 +11,26 @@ const password = ref('')
 const error = ref('')
 const loading = ref(false)
 
+// Inside LoginView.vue <script setup>
 async function handleLogin() {
   error.value = ''
   loading.value = true
 
   try {
-    await auth.login(email.value, password.value)
-    router.push({ name: 'dashboard' })
+    // Pass object and use the correct method name
+    const success = await auth.loginUser({
+      email: email.value,
+      password: password.value
+    })
+    
+    if (success) {
+      router.push({ name: 'dashboard' })
+    } else {
+      error.value = auth.error || 'Login failed. Please try again.'
+    }
   } catch (e) {
-    // Show the validation message from Laravel
-    error.value = e.response?.data?.message ?? 'Login failed. Please try again.'
+    console.error('Unexpected error during login:', e)
+    error.value = 'A critical error occurred.'
   } finally {
     loading.value = false
   }
