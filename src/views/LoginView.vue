@@ -66,16 +66,6 @@ async function handleLogin() {
           />
         </div>
 
-        <div>
-          <label class="block text-sm font-medium text-gray-700 mb-1">Confirm Password</label>
-          <input
-            v-model="confirmPassword"
-            type="text"
-            placeholder="••••••••"
-            class="w-full border border-gray-300 rounded-lg px-4 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-            @keyup.enter="handleLogin"
-          />
-        </div>
 
         <button
           @click="handleLogin"
