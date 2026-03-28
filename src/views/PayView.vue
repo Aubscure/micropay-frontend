@@ -56,7 +56,13 @@ async function handlePay() {
     setTimeout(() => router.push({ name: 'dashboard' }), 1500)
 
   } catch (e) {
-    error.value = e.response?.data?.message ?? 'Payment failed. Please try again.'
+    const errData = e.response?.data
+    if (errData?.errors) {
+      // Flatten validation errors into a single string (e.g. "The amount must be an integer., The currency is invalid.")
+      error.value = Object.values(errData.errors).flat().join(' ')
+    } else {
+      error.value = errData?.message ?? 'Payment failed. Please try again.'
+    }
   } finally {
     loading.value = false
   }
