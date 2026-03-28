@@ -9,6 +9,7 @@ const auth = useAuthStore()
 const name = ref('')
 const email = ref('')
 const password = ref('')
+const confirmPassword = ref('')
 const error = ref('')
 const loading = ref(false)
 
@@ -17,7 +18,7 @@ async function handleRegister() {
   loading.value = true
 
   try {
-    await auth.register(name.value, email.value, password.value)
+    await auth.register(name.value, email.value, password.value, confirmPassword.value)
     router.push({ name: 'dashboard' })
   } catch (e) {
     // Laravel returns validation errors as an object under 'errors'
