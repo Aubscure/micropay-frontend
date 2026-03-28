@@ -113,4 +113,12 @@ function statusColor(status) {
               <p class="text-sm font-medium text-gray-800">PHP {{ (tx.amount_centavos / 100).toFixed(2) }}</p>
               <p class="text-xs text-gray-400 mt-0.5">{{ tx.notes ?? tx.payment_method }}</p>
             </div>
-            <span :class="['text-xs font-semibold px-2 py-1 rounded-full', s
+            <span :class="['text-xs font-semibold px-2 py-1 rounded-full', statusColor(tx.status)]">
+              {{ tx.status }}
+            </span>
+          </li>
+        </ul>
+      </div>
+    </div>
+  </div>
+</template>
