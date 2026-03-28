@@ -1,5 +1,5 @@
 <script setup>
-import { ref, onMounted } from 'vue'
+import { ref, onMounted, onUnmounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
 import { getTransactions } from '@/api/transactions'
@@ -11,17 +11,37 @@ const { isOnline, isSyncing } = useNetworkStatus()
 
 const transactions = ref([])
 const loading = ref(true)
+let pollInterval = null
 
-onMounted(async () => {
+const fetchTransactions = async () => {
   try {
     const response = await getTransactions()
     // Laravel pagination wraps results in response.data.data
     transactions.value = response.data.data ?? response.data
+
+    const hasPending = transactions.value.some(tx => 
+      ['pending', 'fraud_check'].includes(tx.status)
+    )
+
+    if (hasPending && !pollInterval) {
+      pollInterval = setInterval(fetchTransactions, 3000)
+    } else if (!hasPending && pollInterval) {
+      clearInterval(pollInterval)
+      pollInterval = null
+    }
   } catch (e) {
     console.error('Failed to load transactions', e)
   } finally {
     loading.value = false
   }
+}
+
+onMounted(() => {
+  fetchTransactions()
+})
+
+onUnmounted(() => {
+  if (pollInterval) clearInterval(pollInterval)
 })
 
 async function handleLogout() {
