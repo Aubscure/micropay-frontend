@@ -33,10 +33,18 @@ export default defineConfig({
       },
       workbox: {
         globPatterns: ['**/*.{js,css,html,ico,png,svg,woff2}'],
+
+        // SPA fallback — serve index.html for all navigation requests
+        // so Vue Router can handle routes like /pay, /history offline
+        navigateFallback: 'index.html',
+        // Don't fallback API requests — let those fail naturally so
+        // the offline queue logic kicks in
+        navigateFallbackDenylist: [/^\/api\//],
+
         runtimeCaching: [
           {
-            // Match your Koyeb Laravel API
-            urlPattern: /^https:\/\/your-api\.koyeb\.app\/api\/.*/i,
+            // Match your Laravel Cloud API
+            urlPattern: /^https:\/\/micropay-api-main-.*\.laravel\.cloud\/api\/.*/i,
             handler: 'NetworkFirst',
             options: {
               cacheName: 'api-cache',

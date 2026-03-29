@@ -13,6 +13,7 @@ const amount = ref('')
 const notes = ref('')
 const loading = ref(false)
 const success = ref(false)
+const savedOffline = ref(false)
 const error = ref('')
 
 // src/views/PayView.vue — replace the handlePay function

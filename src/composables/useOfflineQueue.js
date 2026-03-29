@@ -19,6 +19,16 @@ const DB_VERSION = 1                   // Version — increment when schema chan
 const STORE_NAME = 'pending_transactions'  // "Table" name in IndexedDB
 
 /**
+ * Read the user's auth token from localStorage.
+ * This is the same token stored by the login flow and used by api/client.js.
+ *
+ * @returns {string|null}
+ */
+function getToken() {
+  return localStorage.getItem('auth_token')
+}
+
+/**
  * Opens (or creates) the IndexedDB database.
  * Returns a Promise that resolves to the IDBDatabase object.
  */
