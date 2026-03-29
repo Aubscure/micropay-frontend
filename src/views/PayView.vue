@@ -15,10 +15,11 @@ const loading = ref(false)
 const success = ref(false)
 const error = ref('')
 
+// src/views/PayView.vue — replace the handlePay function
+
 async function handlePay() {
   error.value = ''
 
-  // Convert PHP amount to centavos — multiply by 100
   const centavos = Math.round(parseFloat(amount.value) * 100)
 
   if (!centavos || centavos < 1) {
@@ -29,43 +30,74 @@ async function handlePay() {
   loading.value = true
 
   const transactionData = {
-    // Generate a UUID locally — works offline, prevents duplicates on sync
-    id: crypto.randomUUID(),
+    id:              crypto.randomUUID(),
     amount_centavos: centavos,
-    currency: 'PHP',
-    payment_method: 'qr_code',
-    notes: notes.value || null,
+    currency:        'PHP',
+    payment_method:  'qr_code',
+    notes:           notes.value || null,
   }
 
   try {
     if (isOnline.value) {
-      // Online — send directly to the API
+      // Attempt the API call — this may still fail even if navigator.onLine is true
       await createTransaction(transactionData)
+      savedOffline.value = false
     } else {
-      // Offline — save to IndexedDB queue for later sync
-      await addToQueue(transactionData)
+      // navigator.onLine already says we're offline — skip the API attempt
+      throw { isNetworkError: true }
     }
 
-    success.value = true
-
-    // Clear the form
-    amount.value = ''
-    notes.value = ''
-
-    // Go back to dashboard after 1.5 seconds
-    setTimeout(() => router.push({ name: 'dashboard' }), 1500)
-
   } catch (e) {
+    // Check if this is a network failure (no internet) vs a server error (API rejected it)
+    //
+    // Axios sets e.code = 'ERR_NETWORK' or e.message = 'Network Error' for connection failures.
+    // A server error (400, 422, 500) has e.response defined.
+    // We only want to save offline for true network failures — not validation errors.
+    const isNetworkFailure = e.isNetworkError
+      || e.code === 'ERR_NETWORK'
+      || e.message === 'Network Error'
+      || (!e.response && !e.isAxiosError === false)
+      || (!e.response && e.request)
+
+    if (isNetworkFailure) {
+      // True offline — save to IndexedDB queue instead of failing
+      try {
+        await addToQueue(transactionData)
+        savedOffline.value = true
+        success.value = true
+
+        amount.value = ''
+        notes.value  = ''
+
+        setTimeout(() => router.push({ name: 'dashboard' }), 1500)
+        return // Exit here — don't fall through to the error handler below
+
+      } catch (queueError) {
+        error.value = 'Could not save payment offline. Please try again.'
+        loading.value = false
+        return
+      }
+    }
+
+    // This is a server error (422 validation, 403 auth, 500 crash) — show the message
     const errData = e.response?.data
     if (errData?.errors) {
-      // Flatten validation errors into a single string (e.g. "The amount must be an integer., The currency is invalid.")
       error.value = Object.values(errData.errors).flat().join(' ')
     } else {
       error.value = errData?.message ?? 'Payment failed. Please try again.'
     }
-  } finally {
+
     loading.value = false
+    return
   }
+
+  // Online success path
+  success.value = true
+  amount.value  = ''
+  notes.value   = ''
+  setTimeout(() => router.push({ name: 'dashboard' }), 1500)
+
+  loading.value = false
 }
 </script>
 
