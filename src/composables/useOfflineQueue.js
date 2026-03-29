@@ -1,6 +1,7 @@
 // src/composables/useOfflineQueue.js
 
 import { ref } from 'vue'
+import { encryptPayload, decryptPayload } from '@/utils/crypto'
 
 /**
  * Manages the offline transaction queue using IndexedDB.
@@ -65,6 +66,10 @@ export function useOfflineQueue() {
    */
   async function addToQueue(transaction) {
     const db = await openDatabase()
+    const token = getToken()
+
+    // Encrypt the transaction payload before storage
+    const encrypted = await encryptPayload(transaction, token)
 
     return new Promise((resolve, reject) => {
       // Start a read-write transaction on the object store
@@ -73,21 +78,20 @@ export function useOfflineQueue() {
 
       // Add metadata to track when it was queued
       const record = {
-        ...transaction,
-        status: 'queued',
+        id:        transaction.id,   // Plain — needed for IndexedDB key
+        status:    'queued',         // Plain — needed for index queries
         queued_at: new Date().toISOString(),
+        payload:   encrypted,        // Encrypted transaction data
       }
 
       // put() adds or updates the record
       const request = store.put(record)
 
-      request.onsuccess = () => {
-        pendingCount.value++
-        resolve(record)
-      }
 
-      request.onerror = () => reject(request.error)
+      request.onsuccess = () => { pendingCount.value++; resolve(record) }
+      request.onerror   = () => reject(request.error)
     })
+
   }
 
   /**
@@ -97,18 +101,34 @@ export function useOfflineQueue() {
    */
   async function getQueue() {
     const db = await openDatabase()
+    const token = getToken()
 
     return new Promise((resolve, reject) => {
       const tx = db.transaction(STORE_NAME, 'readonly')
       const store = tx.objectStore(STORE_NAME)
       const index = store.index('status')
+      
 
       // Query only records with status = 'queued'
       const request = index.getAll('queued')
 
-      request.onsuccess = () => {
-        pendingCount.value = request.result.length
-        resolve(request.result)
+      request.onsuccess = async () => {
+        const records = request.result
+        const decrypted = []
+
+        for (const record of records) {
+          try {
+            // Decrypt the payload — throws if tampered
+            const data = await decryptPayload(record.payload, token)
+            decrypted.push(data)
+          } catch (e) {
+            // Payload was tampered with — discard it and log
+            console.error(`Tampered record detected and discarded: ${record.id}`)
+          }
+        }
+
+        pendingCount.value = decrypted.length
+        resolve(decrypted)
       }
 
       request.onerror = () => reject(request.error)
@@ -128,12 +148,9 @@ export function useOfflineQueue() {
       const store = tx.objectStore(STORE_NAME)
       const request = store.delete(id)
 
-      request.onsuccess = () => {
-        if (pendingCount.value > 0) pendingCount.value--
-        resolve()
-      }
+      request.onsuccess = () => { if (pendingCount.value > 0) pendingCount.value--; resolve() }
+      request.onerror   = () => reject(request.error)
 
-      request.onerror = () => reject(request.error)
     })
   }
 
