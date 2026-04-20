@@ -3,14 +3,21 @@ import { ref, onMounted, computed } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { getTransaction } from '@/api/transactions'
 
+// ── Add to your nuxt.config.ts > app.head.link:
+// { rel: 'stylesheet', href: 'https://fonts.googleapis.com/css2?family=Syne:wght@600;700;800&family=DM+Mono:wght@400;500&family=DM+Sans:wght@400;500;600&display=swap' }
+
 const route  = useRoute()
 const router = useRouter()
 
 const transaction = ref(null)
 const loading     = ref(true)
 const error       = ref(null)
+const mounted     = ref(false)
 
 onMounted(async () => {
+  // Defer entrance animation
+  requestAnimationFrame(() => { mounted.value = true })
+
   try {
     const response = await getTransaction(route.params.id)
     transaction.value = response.data.data
@@ -25,7 +32,10 @@ onMounted(async () => {
 // ── Helpers ──────────────────────────────────────────────────────
 
 function formatAmount(centavos) {
-  return (centavos / 100).toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+  return (centavos / 100).toLocaleString('en-PH', {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  })
 }
 
 function formatDate(dateStr) {
@@ -44,7 +54,7 @@ function formatRuleName(rule) {
 }
 
 const PAYMENT_METHODS = {
-  qr_code:      { label: 'QR Code',      icon: '▦' },
+  qr_code:      { label: 'QR Code',      icon: '▦'  },
   nfc:          { label: 'NFC Tap',       icon: '📶' },
   manual_entry: { label: 'Manual Entry',  icon: '⌨️' },
 }
@@ -55,68 +65,84 @@ const paymentMethod = computed(() => {
 })
 
 const STATUS_CONFIG = {
-  pending:     { label: 'Pending',      icon: '⏳', cls: 'bg-amber-50  text-amber-700  ring-amber-200'  },
-  fraud_check: { label: 'Fraud Check',  icon: '🔍', cls: 'bg-orange-50 text-orange-700 ring-orange-200' },
-  cleared:     { label: 'Cleared',      icon: '✔️',  cls: 'bg-sky-50   text-sky-700    ring-sky-200'    },
-  settled:     { label: 'Settled',      icon: '💚',  cls: 'bg-emerald-50 text-emerald-700 ring-emerald-200' },
-  flagged:     { label: 'Flagged',      icon: '🚩', cls: 'bg-red-50   text-red-700    ring-red-200'    },
-  rejected:    { label: 'Rejected',     icon: '✖',  cls: 'bg-slate-50 text-slate-600  ring-slate-200'  },
+  pending:     { label: 'Pending',     icon: '⏳', dot: 'bg-amber-400',   pill: 'border-amber-400/40  text-amber-300'   },
+  fraud_check: { label: 'Fraud Check', icon: '🔍', dot: 'bg-orange-400',  pill: 'border-orange-400/40 text-orange-300'  },
+  cleared:     { label: 'Cleared',     icon: '✔',  dot: 'bg-sky-400',     pill: 'border-sky-400/40    text-sky-300'     },
+  settled:     { label: 'Settled',     icon: '✦',  dot: 'bg-emerald-400', pill: 'border-emerald-400/40 text-emerald-300'},
+  flagged:     { label: 'Flagged',     icon: '⚑',  dot: 'bg-red-400',     pill: 'border-red-400/40    text-red-300'    },
+  rejected:    { label: 'Rejected',    icon: '✖',  dot: 'bg-slate-500',   pill: 'border-slate-500/40  text-slate-400'  },
 }
 
 function getStatus(status) {
-  return STATUS_CONFIG[status] ?? { label: status, icon: '•', cls: 'bg-slate-50 text-slate-600 ring-slate-200' }
+  return STATUS_CONFIG[status] ?? { label: status, icon: '•', dot: 'bg-slate-500', pill: 'border-slate-500/40 text-slate-400' }
 }
 
-// Risk score: 0–49 low, 50–74 medium, 75+ high
+// Risk: 0.00–0.49 low, 0.50–0.74 medium, 0.75+ high
 function riskLevel(score) {
   const n = parseFloat(score)
-  if (n >= 0.75) return { label: 'High',   bar: 'bg-red-500',    text: 'text-red-600 font-bold'   }
-  if (n >= 0.50) return { label: 'Medium', bar: 'bg-orange-400', text: 'text-orange-600 font-semibold' }
-  return              { label: 'Low',    bar: 'bg-emerald-400', text: 'text-emerald-600' }
+  if (n >= 0.75) return { label: 'High',   color: 'text-red-400',    fill: '#f87171', track: 'bg-red-400'    }
+  if (n >= 0.50) return { label: 'Medium', color: 'text-orange-400', fill: '#fb923c', track: 'bg-orange-400' }
+  return              { label: 'Low',    color: 'text-emerald-400', fill: '#34d399', track: 'bg-emerald-400'}
 }
 
 function sourceBadge(source) {
   return source === 'ai_agent'
-    ? { label: 'AI Agent',    cls: 'bg-purple-50 text-purple-700 ring-purple-200', icon: '🤖' }
-    : { label: 'Rule Engine', cls: 'bg-sky-50    text-sky-700    ring-sky-200',    icon: '⚙️' }
+    ? { label: 'AI Agent',    cls: 'border-purple-400/40 text-purple-300', icon: '⬡' }
+    : { label: 'Rule Engine', cls: 'border-sky-400/40    text-sky-300',    icon: '⚙' }
+}
+
+// Segment bar: 10 ticks representing 0–100%
+function riskSegments(score) {
+  const pct = parseFloat(score) * 100
+  const filled = Math.round(pct / 10)
+  return Array.from({ length: 10 }, (_, i) => i < filled)
 }
 </script>
 
 <template>
-  <div class="min-h-screen bg-slate-100 font-sans">
+  <div class="txn-root min-h-screen bg-[#0c0f14] font-sans">
 
-    <!-- ── Header ────────────────────────────────────────────── -->
-    <header class="bg-slate-900 text-white shadow-lg">
-      <div class="max-w-lg mx-auto px-4 py-4 flex items-center gap-3">
+    <!-- ── Header ───────────────────────────────────────────── -->
+    <header class="sticky top-0 z-20 border-b border-white/[0.06] bg-[#0c0f14]/90 backdrop-blur-md">
+      <div class="max-w-lg mx-auto px-4 h-14 flex items-center gap-3">
         <button
           @click="router.back()"
-          class="w-8 h-8 flex items-center justify-center rounded-full bg-white/10 hover:bg-white/20 transition-colors text-sm focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400"
+          class="w-8 h-8 flex items-center justify-center rounded-lg border border-white/10 text-slate-400 hover:text-white hover:border-white/20 hover:bg-white/5 transition-all focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500"
           aria-label="Go back"
         >
-          ←
+          <svg width="14" height="14" viewBox="0 0 14 14" fill="none" aria-hidden="true">
+            <path d="M9 2L4 7L9 12" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+          </svg>
         </button>
-        <h1 class="font-bold text-lg tracking-tight">Transaction Detail</h1>
+
+        <div class="flex-1 min-w-0">
+          <p class="text-[11px] font-mono text-slate-500 uppercase tracking-widest leading-none mb-0.5">Payment Gateway</p>
+          <h1 class="text-sm font-bold text-white leading-none truncate" style="font-family: 'Syne', sans-serif">
+            Transaction Detail
+          </h1>
+        </div>
       </div>
     </header>
 
-    <main class="max-w-lg mx-auto px-4 py-6 space-y-4">
+    <main class="max-w-lg mx-auto px-4 py-6 space-y-3">
 
-      <!-- ── Loading ──────────────────────────────────────────── -->
-      <div v-if="loading" aria-live="polite" aria-busy="true" class="space-y-4">
-        <div class="bg-white rounded-2xl shadow p-5 animate-pulse space-y-4">
-          <div class="flex justify-between">
-            <div class="space-y-2">
-              <div class="h-9 bg-slate-100 rounded w-40"></div>
-              <div class="h-3 bg-slate-100 rounded w-16"></div>
-            </div>
-            <div class="h-7 bg-slate-100 rounded-full w-24"></div>
+      <!-- ── Loading skeleton ─────────────────────────────────── -->
+      <div v-if="loading" aria-live="polite" aria-busy="true" class="space-y-3">
+        <!-- Amount skeleton -->
+        <div class="rounded-2xl border border-white/[0.07] bg-[#111520] p-6 animate-pulse space-y-4">
+          <div class="h-11 bg-white/5 rounded-lg w-44"></div>
+          <div class="h-3 bg-white/5 rounded w-16"></div>
+          <div class="flex justify-between mt-3">
+            <div class="h-6 bg-white/5 rounded-full w-24"></div>
+            <div class="h-3 bg-white/5 rounded w-20 self-end"></div>
           </div>
         </div>
-        <div class="bg-white rounded-2xl shadow p-5 animate-pulse space-y-3">
-          <div class="h-3 bg-slate-100 rounded w-16"></div>
+        <!-- Details skeleton -->
+        <div class="rounded-2xl border border-white/[0.07] bg-[#111520] p-6 animate-pulse space-y-4">
+          <div class="h-3 bg-white/5 rounded w-14"></div>
           <div v-for="n in 4" :key="n" class="flex justify-between">
-            <div class="h-3 bg-slate-100 rounded w-24"></div>
-            <div class="h-3 bg-slate-100 rounded w-28"></div>
+            <div class="h-3 bg-white/5 rounded w-24"></div>
+            <div class="h-3 bg-white/5 rounded w-32"></div>
           </div>
         </div>
       </div>
@@ -124,85 +150,130 @@ function sourceBadge(source) {
       <!-- ── Error ─────────────────────────────────────────────── -->
       <div
         v-else-if="error"
-        class="bg-white rounded-2xl shadow p-8 text-center space-y-3"
+        class="rounded-2xl border border-red-500/20 bg-red-500/5 p-8 text-center space-y-4"
         role="alert"
       >
-        <div class="w-14 h-14 rounded-full bg-red-50 flex items-center justify-center text-3xl mx-auto" aria-hidden="true">⚠️</div>
-        <p class="text-sm font-semibold text-slate-700">{{ error }}</p>
+        <div class="w-12 h-12 rounded-xl border border-red-500/30 bg-red-500/10 flex items-center justify-center text-2xl mx-auto" aria-hidden="true">
+          ⚠
+        </div>
+        <div class="space-y-1">
+          <p class="text-sm font-semibold text-slate-200">Failed to load transaction</p>
+          <p class="text-xs text-slate-500">{{ error }}</p>
+        </div>
         <button
           @click="router.back()"
-          class="text-sm text-emerald-600 hover:text-emerald-500 font-semibold focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400 rounded"
+          class="text-xs font-mono font-semibold text-emerald-400 hover:text-emerald-300 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500 rounded"
         >
-          ← Go back
+          ← back
         </button>
       </div>
 
       <!-- ── Main content ─────────────────────────────────────── -->
       <template v-else-if="transaction">
 
-        <!-- Amount + Status card -->
-        <section class="bg-white rounded-2xl shadow-md p-5" aria-label="Transaction summary">
-          <div class="flex items-start justify-between gap-4">
-            <div>
-              <p class="text-3xl font-black text-slate-900 tabular-nums tracking-tight">
-                ₱{{ formatAmount(transaction.amount_centavos) }}
-              </p>
-              <p class="text-xs text-slate-400 mt-1">{{ transaction.currency }}</p>
-            </div>
-            <span
-              :class="['inline-flex items-center gap-1.5 text-xs font-bold px-3 py-1.5 rounded-full ring-1 capitalize shrink-0 mt-1', getStatus(transaction.status).cls]"
-              role="status"
-              :aria-label="`Status: ${getStatus(transaction.status).label}`"
-            >
-              <span aria-hidden="true">{{ getStatus(transaction.status).icon }}</span>
-              {{ getStatus(transaction.status).label }}
-            </span>
-          </div>
+        <!-- ─ Hero: Amount + Status ─────────────────────────── -->
+        <section
+          class="card-enter rounded-2xl border border-white/[0.07] bg-[#111520] overflow-hidden"
+          aria-label="Transaction summary"
+          :class="{ 'card-enter-active': mounted }"
+          style="--delay: 0ms"
+        >
+          <!-- Subtle top accent line matching status color -->
+          <div
+            :class="['h-[2px] w-full', getStatus(transaction.status).dot]"
+            aria-hidden="true"
+          ></div>
 
-          <!-- Notes -->
-          <blockquote
-            v-if="transaction.notes"
-            class="mt-4 text-sm text-slate-500 italic border-l-2 border-emerald-300 pl-3 pt-3 border-t border-t-slate-100"
-          >
-            {{ transaction.notes }}
-          </blockquote>
+          <div class="p-6">
+            <!-- Currency label -->
+            <p class="text-[10px] font-mono text-slate-500 uppercase tracking-[0.2em] mb-2">
+              {{ transaction.currency ?? 'PHP' }}
+            </p>
+
+            <!-- Amount — hero element -->
+            <p
+              class="text-[2.75rem] leading-none font-black text-white tabular-nums tracking-tight mb-4"
+              style="font-family: 'DM Mono', monospace"
+              aria-label="Amount: {{ formatAmount(transaction.amount_centavos) }} {{ transaction.currency ?? 'PHP' }}"
+            >
+              <span class="text-2xl text-slate-500 mr-1" aria-hidden="true">₱</span>{{ formatAmount(transaction.amount_centavos) }}
+            </p>
+
+            <!-- Status pill + timestamp -->
+            <div class="flex items-center justify-between flex-wrap gap-3">
+              <span
+                :class="['inline-flex items-center gap-2 text-[11px] font-semibold font-mono px-3 py-1.5 rounded-full border capitalize', getStatus(transaction.status).pill]"
+                role="status"
+                :aria-label="`Status: ${getStatus(transaction.status).label}`"
+              >
+                <!-- Animated pulse dot -->
+                <span class="relative flex h-1.5 w-1.5" aria-hidden="true">
+                  <span
+                    v-if="['pending','fraud_check'].includes(transaction.status)"
+                    :class="['animate-ping absolute inline-flex h-full w-full rounded-full opacity-75', getStatus(transaction.status).dot]"
+                  ></span>
+                  <span :class="['relative inline-flex rounded-full h-1.5 w-1.5', getStatus(transaction.status).dot]"></span>
+                </span>
+                {{ getStatus(transaction.status).label }}
+              </span>
+
+              <span class="text-[11px] font-mono text-slate-500">
+                {{ formatDate(transaction.created_at) }}
+              </span>
+            </div>
+
+            <!-- Notes -->
+            <blockquote
+              v-if="transaction.notes"
+              class="mt-5 pt-4 border-t border-white/[0.06] text-xs text-slate-400 italic leading-relaxed"
+            >
+              "{{ transaction.notes }}"
+            </blockquote>
+          </div>
         </section>
 
-        <!-- Details card -->
-        <section class="bg-white rounded-2xl shadow-md p-5 space-y-4" aria-label="Transaction details">
-          <h2 class="text-xs font-bold text-slate-400 uppercase tracking-widest">Details</h2>
+        <!-- ─ Details ──────────────────────────────────────── -->
+        <section
+          class="card-enter rounded-2xl border border-white/[0.07] bg-[#111520] p-6 space-y-5"
+          aria-label="Transaction details"
+          :class="{ 'card-enter-active': mounted }"
+          style="--delay: 60ms"
+        >
+          <h2 class="section-label">Details</h2>
 
-          <dl class="space-y-3 text-sm">
+          <dl class="space-y-0 divide-y divide-white/[0.05]">
 
-            <div class="flex items-center justify-between">
-              <dt class="text-slate-500">Payment Method</dt>
-              <dd class="text-slate-800 font-medium flex items-center gap-1.5">
-                <span aria-hidden="true">{{ paymentMethod.icon }}</span>
+            <div class="row-item">
+              <dt>Payment Method</dt>
+              <dd>
+                <span aria-hidden="true" class="mr-1">{{ paymentMethod.icon }}</span>
                 {{ paymentMethod.label }}
               </dd>
             </div>
 
-            <div class="flex items-center justify-between">
-              <dt class="text-slate-500">Source</dt>
-              <dd class="text-slate-800 font-medium">
-                {{ transaction.was_offline ? '📴 Offline (synced)' : '🌐 Online' }}
+            <div class="row-item">
+              <dt>Source</dt>
+              <dd>
+                <span aria-hidden="true" class="mr-1">{{ transaction.was_offline ? '📴' : '🌐' }}</span>
+                {{ transaction.was_offline ? 'Offline (synced)' : 'Online' }}
               </dd>
             </div>
 
-            <div class="flex items-center justify-between" v-if="transaction.initiated_at">
-              <dt class="text-slate-500">Initiated</dt>
-              <dd class="text-slate-800 font-medium">{{ formatDate(transaction.initiated_at) }}</dd>
+            <div v-if="transaction.initiated_at" class="row-item">
+              <dt>Initiated</dt>
+              <dd class="font-mono">{{ formatDate(transaction.initiated_at) }}</dd>
             </div>
 
-            <div class="flex items-center justify-between">
-              <dt class="text-slate-500">Recorded</dt>
-              <dd class="text-slate-800 font-medium">{{ formatDate(transaction.created_at) }}</dd>
+            <div class="row-item">
+              <dt>Recorded</dt>
+              <dd class="font-mono">{{ formatDate(transaction.created_at) }}</dd>
             </div>
 
-            <div class="flex items-start justify-between pt-2 border-t border-slate-100">
-              <dt class="text-slate-500 shrink-0">Transaction ID</dt>
+            <!-- Transaction ID — selectable for easy copying -->
+            <div class="flex items-start justify-between gap-4 py-4">
+              <dt class="text-xs text-slate-500 shrink-0 pt-px">Transaction ID</dt>
               <dd
-                class="text-slate-400 text-xs font-mono break-all text-right ml-4 select-all"
+                class="text-[11px] font-mono text-slate-400 break-all text-right select-all cursor-text leading-relaxed"
                 aria-label="Transaction ID, select to copy"
               >
                 {{ transaction.id }}
@@ -212,51 +283,58 @@ function sourceBadge(source) {
           </dl>
         </section>
 
-        <!-- Fraud flags card -->
+        <!-- ─ Fraud Flags ──────────────────────────────────── -->
         <section
           v-if="transaction.fraud_flags && transaction.fraud_flags.length > 0"
-          class="bg-white rounded-2xl shadow-md p-5 space-y-4"
+          class="card-enter space-y-3"
           aria-label="Fraud detection flags"
+          :class="{ 'card-enter-active': mounted }"
+          style="--delay: 120ms"
         >
-          <header class="flex items-center justify-between">
-            <h2 class="text-xs font-bold text-red-500 uppercase tracking-widest flex items-center gap-1.5">
-              <span aria-hidden="true">🚩</span>
+          <!-- Section header outside of cards -->
+          <div class="flex items-center justify-between px-1">
+            <h2 class="section-label text-red-400/80">
+              <span aria-hidden="true">⚑</span>
               Fraud Flags
             </h2>
-            <span class="text-xs font-bold bg-red-50 text-red-600 ring-1 ring-red-200 px-2 py-0.5 rounded-full">
-              {{ transaction.fraud_flags.length }}
+            <span class="text-[11px] font-mono font-bold bg-red-500/10 border border-red-500/25 text-red-400 px-2 py-0.5 rounded-full">
+              {{ transaction.fraud_flags.length }} flag{{ transaction.fraud_flags.length !== 1 ? 's' : '' }}
             </span>
-          </header>
+          </div>
 
-          <ul class="space-y-3">
+          <ul class="space-y-2.5">
             <li
-              v-for="flag in transaction.fraud_flags"
+              v-for="(flag, idx) in transaction.fraud_flags"
               :key="flag.id"
-              class="border border-slate-100 rounded-xl p-4 space-y-3"
+              class="card-enter rounded-2xl border border-white/[0.07] bg-[#111520] p-5 space-y-4"
+              :class="{ 'card-enter-active': mounted }"
+              :style="`--delay: ${180 + idx * 60}ms`"
             >
-              <!-- Rule name + source badge -->
-              <div class="flex items-start justify-between gap-2 flex-wrap">
-                <p class="text-sm font-bold text-slate-800">
+              <!-- Rule + Source row -->
+              <div class="flex items-start justify-between gap-3 flex-wrap">
+                <p class="text-sm font-bold text-white leading-tight" style="font-family: 'Syne', sans-serif">
                   {{ formatRuleName(flag.rule_triggered) }}
                 </p>
                 <span
-                  :class="['inline-flex items-center gap-1 text-xs font-semibold px-2 py-0.5 rounded-full ring-1', sourceBadge(flag.source).cls]"
+                  :class="['inline-flex items-center gap-1.5 text-[11px] font-mono font-semibold px-2 py-1 rounded-lg border shrink-0', sourceBadge(flag.source).cls]"
                 >
                   <span aria-hidden="true">{{ sourceBadge(flag.source).icon }}</span>
                   {{ sourceBadge(flag.source).label }}
                 </span>
               </div>
 
-              <!-- Risk score bar -->
+              <!-- Risk score — segmented bar -->
               <div>
-                <div class="flex items-center justify-between mb-1.5">
-                  <span class="text-xs text-slate-400">Risk Score</span>
-                  <span :class="['text-xs', riskLevel(flag.risk_score).text]">
-                    {{ riskLevel(flag.risk_score).label }} — {{ (parseFloat(flag.risk_score) * 100).toFixed(0) }}%
+                <div class="flex items-center justify-between mb-2">
+                  <span class="text-[10px] font-mono text-slate-500 uppercase tracking-widest">Risk Score</span>
+                  <span :class="['text-[11px] font-mono font-bold', riskLevel(flag.risk_score).color]">
+                    {{ riskLevel(flag.risk_score).label }} · {{ (parseFloat(flag.risk_score) * 100).toFixed(0) }}%
                   </span>
                 </div>
+
+                <!-- Segmented tick bar -->
                 <div
-                  class="w-full bg-slate-100 rounded-full h-2 overflow-hidden"
+                  class="flex gap-0.5"
                   role="meter"
                   :aria-valuenow="(parseFloat(flag.risk_score) * 100).toFixed(0)"
                   aria-valuemin="0"
@@ -264,53 +342,132 @@ function sourceBadge(source) {
                   :aria-label="`Risk score: ${(parseFloat(flag.risk_score) * 100).toFixed(0)}%`"
                 >
                   <div
-                    :class="['h-2 rounded-full transition-all duration-500', riskLevel(flag.risk_score).bar]"
-                    :style="{ width: (parseFloat(flag.risk_score) * 100) + '%' }"
+                    v-for="(active, i) in riskSegments(flag.risk_score)"
+                    :key="i"
+                    :class="[
+                      'flex-1 h-1.5 rounded-sm transition-all duration-300',
+                      active ? riskLevel(flag.risk_score).track : 'bg-white/[0.06]'
+                    ]"
+                    :style="active ? `transition-delay: ${i * 40}ms` : ''"
+                    aria-hidden="true"
                   ></div>
                 </div>
               </div>
 
-              <!-- Reason text — rendered as text binding, never v-html -->
-              <p class="text-xs text-slate-500 leading-relaxed">
+              <!-- Reason — text binding only, never v-html -->
+              <p class="text-xs text-slate-400 leading-relaxed border-l-2 border-white/[0.08] pl-3">
                 {{ flag.reason }}
               </p>
 
               <!-- Resolution state -->
-              <div class="flex items-center gap-1.5 pt-1 border-t border-slate-100">
-                <span
-                  v-if="flag.resolved"
-                  class="text-xs text-emerald-600 font-semibold flex items-center gap-1"
-                >
-                  <span aria-hidden="true">✅</span>
-                  Resolved {{ formatDate(flag.resolved_at) }}
-                </span>
-                <span
-                  v-else
-                  class="text-xs text-orange-500 font-semibold flex items-center gap-1"
-                >
-                  <span aria-hidden="true">⏳</span>
-                  Pending review
-                </span>
+              <div class="flex items-center gap-2 pt-1 border-t border-white/[0.05]">
+                <template v-if="flag.resolved">
+                  <span class="flex items-center gap-1.5 text-[11px] font-mono text-emerald-400" aria-live="polite">
+                    <span class="w-1.5 h-1.5 rounded-full bg-emerald-400 shrink-0" aria-hidden="true"></span>
+                    Resolved · {{ formatDate(flag.resolved_at) }}
+                  </span>
+                </template>
+                <template v-else>
+                  <span class="flex items-center gap-1.5 text-[11px] font-mono text-orange-400">
+                    <span class="relative flex h-1.5 w-1.5 shrink-0" aria-hidden="true">
+                      <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-orange-400 opacity-75"></span>
+                      <span class="relative inline-flex rounded-full h-1.5 w-1.5 bg-orange-400"></span>
+                    </span>
+                    Pending review
+                  </span>
+                </template>
               </div>
-
             </li>
           </ul>
         </section>
 
-        <!-- No fraud flags -->
+        <!-- ─ Clean slate ──────────────────────────────────── -->
         <section
           v-else-if="transaction.fraud_flags"
-          class="bg-emerald-50 border border-emerald-100 rounded-2xl p-5 text-center"
+          class="card-enter rounded-2xl border border-emerald-500/20 bg-emerald-500/[0.04] p-5 flex items-center gap-4"
+          :class="{ 'card-enter-active': mounted }"
+          style="--delay: 120ms"
           role="status"
           aria-label="No fraud flags detected"
         >
-          <p class="text-sm font-semibold text-emerald-700 flex items-center justify-center gap-2">
-            <span aria-hidden="true">✅</span>
-            No fraud flags on this transaction
-          </p>
+          <div class="w-9 h-9 rounded-xl border border-emerald-500/20 bg-emerald-500/10 flex items-center justify-center text-lg shrink-0" aria-hidden="true">
+            ✦
+          </div>
+          <div>
+            <p class="text-sm font-semibold text-emerald-300" style="font-family: 'Syne', sans-serif">No fraud flags</p>
+            <p class="text-xs text-slate-500 mt-0.5">This transaction passed all fraud checks.</p>
+          </div>
         </section>
 
       </template>
     </main>
   </div>
 </template>
+
+<style scoped>
+/* ── Fonts (add to nuxt.config.ts instead for production) ───── */
+@import url('https://fonts.googleapis.com/css2?family=Syne:wght@600;700;800&family=DM+Mono:ital,wght@0,400;0,500;1,400&family=DM+Sans:wght@400;500;600&display=swap');
+
+.txn-root {
+  font-family: 'DM Sans', sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* ── Section label ──────────────────────────────────────────── */
+.section-label {
+  display: flex;
+  align-items: center;
+  gap: 0.375rem;
+  font-size: 0.625rem;
+  font-family: 'DM Mono', monospace;
+  font-weight: 500;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: rgb(100 116 139); /* slate-500 */
+}
+
+/* ── Detail row ─────────────────────────────────────────────── */
+.row-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 0.875rem 0;
+}
+
+.row-item dt {
+  font-size: 0.75rem;
+  color: rgb(100 116 139); /* slate-500 */
+  flex-shrink: 0;
+}
+
+.row-item dd {
+  font-size: 0.75rem;
+  font-weight: 500;
+  color: rgb(226 232 240); /* slate-200 */
+  text-align: right;
+}
+
+/* ── Card entrance animation ────────────────────────────────── */
+.card-enter {
+  opacity: 0;
+  transform: translateY(12px);
+  transition: opacity 360ms ease, transform 360ms cubic-bezier(0.22, 1, 0.36, 1);
+  transition-delay: var(--delay, 0ms);
+}
+
+.card-enter-active {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+/* ── Reduce motion ───────────────────────────────────────────── */
+@media (prefers-reduced-motion: reduce) {
+  .card-enter,
+  .card-enter-active {
+    transition: none;
+    transform: none;
+    opacity: 1;
+  }
+}
+</style>
