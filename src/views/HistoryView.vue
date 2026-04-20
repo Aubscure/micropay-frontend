@@ -1,6 +1,9 @@
 <script setup>
 import { ref, onMounted, onUnmounted } from 'vue'
 import { getTransactions } from '@/api/transactions'
+import { useRouter } from 'vue-router'
+
+const router = useRouter()
 
 const transactions = ref([])
 const loading = ref(true)
@@ -76,7 +79,8 @@ function formatDate(dateStr) {
         <li
           v-for="tx in transactions"
           :key="tx.id"
-          class="bg-white rounded-xl shadow p-4 flex items-center justify-between"
+          class="bg-white rounded-xl shadow p-4 flex items-center justify-between cursor-pointer hover:shadow-md transition"
+          @click="router.push({ name: 'transaction.show', params: { id: tx.id } })"
         >
           <div>
             <p class="font-semibold text-gray-800">PHP {{ (tx.amount_centavos / 100).toFixed(2) }}</p>

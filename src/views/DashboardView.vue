@@ -124,11 +124,12 @@ function statusColor(status) {
         </div>
 
         <ul v-else class="divide-y divide-gray-100">
-          <li
-            v-for="tx in transactions"
-            :key="tx.id"
-            class="py-3 flex items-center justify-between"
-          >
+            <li
+              v-for="tx in transactions"
+              :key="tx.id"
+              class="py-3 flex items-center justify-between cursor-pointer hover:bg-gray-50 rounded-lg px-2 -mx-2 transition"
+              @click="router.push({ name: 'transaction.show', params: { id: tx.id } })"
+            >
             <div>
               <p class="text-sm font-medium text-gray-800">PHP {{ (tx.amount_centavos / 100).toFixed(2) }}</p>
               <p class="text-xs text-gray-400 mt-0.5">{{ tx.notes ?? tx.payment_method }}</p>

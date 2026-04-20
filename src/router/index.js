@@ -38,6 +38,13 @@ const router = createRouter({
       meta: { requiresAuth: true },
     },
 
+    {
+      path: '/transactions/:id',
+      name: 'transaction.show',
+      component: () => import('@/views/TransactionDetailView.vue'),
+      meta: { requiresAuth: true },
+    },
+
     // Catch-all — redirect unknown routes to dashboard
     {
       path: '/:pathMatch(.*)*',
