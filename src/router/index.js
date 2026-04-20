@@ -70,5 +70,41 @@ router.beforeEach((to) => {
     return { name: 'dashboard' }
   }
 })
+/**
+ * Global Error Handler for Dynamic Import Failures
+ * Forces a hard reload if a chunk goes missing (usually due to a new deployment).
+ */
+router.onError((error, to) => {
+  const isChunkLoadFailed = error.message.includes('Failed to fetch dynamically imported module') || 
+                            error.message.includes('Importing a module script failed');
 
+  if (isChunkLoadFailed) {
+    // We use a localStorage flag to prevent infinite reload loops 
+    // in case the network is genuinely down or the file is permanently corrupted.
+    const hasAttemptedReload = localStorage.getItem('chunk_failed_reload');
+
+    if (!hasAttemptedReload) {
+      localStorage.setItem('chunk_failed_reload', 'true');
+      console.warn('Chunk load failed. Forcing a hard reload to fetch latest assets.');
+      // Force the browser to reload the target page directly from the server
+      window.location.assign(to.fullPath);
+    } else {
+      console.error('Fatal system error: Chunk still missing after hard reload.', error);
+      // Clean up the flag so the user isn't permanently locked out of retrying later
+      localStorage.removeItem('chunk_failed_reload');
+      
+      // Ideally, trigger your UI error state here (e.g., a toast notification)
+      // alert('A new version of the app is available, but we cannot load it. Please clear your cache.');
+    }
+  }
+});
+
+/**
+ * Clean up the reload flag on successful route resolutions.
+ */
+router.beforeResolve(() => {
+  if (localStorage.getItem('chunk_failed_reload')) {
+    localStorage.removeItem('chunk_failed_reload');
+  }
+});
 export default router
