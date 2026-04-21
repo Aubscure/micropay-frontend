@@ -1,3 +1,5 @@
+//base UI
+
 <script setup>
 import { ref, onMounted, onUnmounted, computed } from 'vue'
 import { useRouter } from 'vue-router'
@@ -7,285 +9,371 @@ import { useNetworkStatus } from '@/composables/useNetworkStatus'
 
 const router = useRouter()
 const auth   = useAuthStore()
-const { isOnline, isSyncing } = useNetworkStatus()
+const { isOnline } = useNetworkStatus()
 
 const transactions = ref([])
 const loading      = ref(true)
 const mounted      = ref(false)
 
-// Replaced setInterval with a safer timeout mechanism
 let pollTimeout = null
 let pollAttempt = 0
 
+// ── Fetch ──────────────────────────────────────────────────────
 const fetchTransactions = async () => {
   try {
-    const response = await getTransactions()
-    // Defensive slicing: prevents browser crash if backend returns 10,000 unpaginated rows
-    const rawData = response.data.data ?? response.data
-    transactions.value = rawData.slice(0, 100) 
+    const { data } = await getTransactions()
+    const raw = data?.data ?? data ?? []
+    transactions.value = Array.isArray(raw) ? raw.slice(0, 100) : []
 
-    const hasPending = transactions.value.some(tx =>
-      ['pending', 'fraud_check'].includes(tx.status)
+    const hasPending = transactions.value.some(
+      tx => tx.status === 'pending' || tx.status === 'fraud_check'
     )
-
-    // Exponential Backoff Polling Strategy
     if (hasPending) {
-      // Calculates delay: 3s, 4.5s, 6.7s... capping at 30 seconds
-      const delay = Math.min(3000 * Math.pow(1.5, pollAttempt), 30000)
+      const delay = Math.min(3000 * Math.pow(1.4, pollAttempt), 30_000)
       pollAttempt++
-      
-      if (pollTimeout) clearTimeout(pollTimeout)
+      clearTimeout(pollTimeout)
       pollTimeout = setTimeout(fetchTransactions, delay)
     } else {
       pollAttempt = 0
-      if (pollTimeout) {
-        clearTimeout(pollTimeout)
-        pollTimeout = null
-      }
+      clearTimeout(pollTimeout)
     }
-  } catch (e) {
-    console.warn('[Dashboard] Failed to load transactions. API may be unreachable.')
+  } catch {
+    console.warn('[Dashboard] fetch failed')
   } finally {
     loading.value = false
   }
 }
 
 onMounted(() => {
-  requestAnimationFrame(() => { mounted.value = true })
+  requestAnimationFrame(() => (mounted.value = true))
   fetchTransactions()
 })
+onUnmounted(() => clearTimeout(pollTimeout))
 
-onUnmounted(() => { 
-  if (pollTimeout) clearTimeout(pollTimeout) 
-})
-
-async function handleLogout() {
-  await auth.logout()
-  router.push({ name: 'login' })
+// ── Auth ───────────────────────────────────────────────────────
+async function logout() {
+  try {
+    await auth.logoutUser()
+    router.replace({ name: 'login' })
+  } catch {
+    console.warn('Logout failed')
+  }
 }
 
-// NOTE: These should ideally come from a separate backend /stats endpoint
-const totalSettled = computed(() =>
-  transactions.value
-    .filter(tx => tx.status === 'settled')
-    .reduce((sum, tx) => sum + tx.amount_centavos, 0)
+// ── Computed ───────────────────────────────────────────────────
+const settledTotal = computed(() =>
+  transactions.value.reduce(
+    (s, tx) => s + (tx.status === 'settled' ? (tx.amount_centavos ?? 0) : 0), 0
+  )
 )
-
-const totalFlagged = computed(() =>
+const pendingCount = computed(() =>
+  transactions.value.filter(
+    tx => tx.status === 'pending' || tx.status === 'fraud_check'
+  ).length
+)
+const flaggedCount = computed(() =>
   transactions.value.filter(tx => tx.status === 'flagged').length
 )
+const recent = computed(() => transactions.value.slice(0, 6))
 
-const pendingCount = computed(() =>
-  transactions.value.filter(tx => ['pending', 'fraud_check'].includes(tx.status)).length
-)
+const userName     = computed(() => auth.user?.name?.split(' ')[0] ?? 'Merchant')
+const userFullName = computed(() => auth.user?.name ?? 'Merchant')
 
-// Show only top 5 for the dashboard summary
-const recentTransactions = computed(() => transactions.value.slice(0, 5))
-
-function formatAmount(centavos) {
-  return (centavos / 100).toLocaleString('en-PH', {
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
-  })
+// ── Formatters ─────────────────────────────────────────────────
+function formatMoney(cents) {
+  return new Intl.NumberFormat('en-PH', {
+    style: 'currency', currency: 'PHP', minimumFractionDigits: 2
+  }).format((cents ?? 0) / 100)
 }
 
-const STATUS_CONFIG = {
-  pending:     { label: 'Pending',     dot: 'bg-amber-400',   pill: 'border-amber-400/40  text-amber-300'    },
-  fraud_check: { label: 'Fraud Check', dot: 'bg-orange-400',  pill: 'border-orange-400/40 text-orange-300'   },
-  cleared:     { label: 'Cleared',     dot: 'bg-sky-400',     pill: 'border-sky-400/40    text-sky-300'      },
-  settled:     { label: 'Settled',     dot: 'bg-emerald-400', pill: 'border-emerald-400/40 text-emerald-300' },
-  flagged:     { label: 'Flagged',     dot: 'bg-red-400',     pill: 'border-red-400/40    text-red-300'      },
-  rejected:    { label: 'Rejected',    dot: 'bg-slate-500',   pill: 'border-slate-500/40  text-slate-400'    },
-}
-
-function getStatus(status) {
-  return STATUS_CONFIG[status] ?? { label: status, dot: 'bg-slate-500', pill: 'border-slate-500/40 text-slate-400' }
-}
-
-function formatDate(dateStr) {
-  return new Date(dateStr).toLocaleString('en-PH', {
+function formatShortDate(d) {
+  if (!d) return '—'
+  return new Date(d).toLocaleString('en-PH', {
     month: 'short', day: 'numeric',
-    hour: '2-digit', minute: '2-digit',
+    hour: '2-digit', minute: '2-digit'
   })
 }
 
-// Fallback logic to prevent undefined errors
-const userFirstName = computed(() => {
-  const name = auth.user?.name || ''
-  return name.split(' ')[0] || 'Merchant'
-})
+// ── Status map ─────────────────────────────────────────────────
+const STATUS = {
+  pending:     { label: 'Pending',  bg: 'bg-amber-50',   text: 'text-amber-700',   ring: 'ring-amber-200'   },
+  fraud_check: { label: 'Checking', bg: 'bg-orange-50',  text: 'text-orange-700',  ring: 'ring-orange-200'  },
+  cleared:     { label: 'Cleared',  bg: 'bg-sky-50',     text: 'text-sky-700',     ring: 'ring-sky-200'     },
+  settled:     { label: 'Settled',  bg: 'bg-emerald-50', text: 'text-emerald-700', ring: 'ring-emerald-200' },
+  flagged:     { label: 'Flagged',  bg: 'bg-red-50',     text: 'text-red-700',     ring: 'ring-red-200'     },
+  rejected:    { label: 'Rejected', bg: 'bg-slate-50',   text: 'text-slate-500',   ring: 'ring-slate-200'   },
+}
+function getStatus(s) {
+  return STATUS[s] ?? { label: s, bg: 'bg-slate-50', text: 'text-slate-500', ring: 'ring-slate-200' }
+}
+
+const METHOD_ICON = { qr_code: '▦', nfc: '⬡', manual_entry: '⌨' }
+function methodIcon(m) { return METHOD_ICON[m] ?? '•' }
 </script>
 
 <template>
-  <div class="dash-root min-h-screen bg-[#0c0f14] font-sans">
+  <div class="min-h-screen bg-[#F1F5F9] text-slate-900" style="font-family: 'Plus Jakarta Sans', system-ui, sans-serif;">
 
-    <header class="sticky top-0 z-20 border-b border-white/[0.06] bg-[#0c0f14]/90 backdrop-blur-md">
-      <div class="max-w-lg mx-auto px-4 h-14 flex items-center justify-between">
+    <!-- ── Sticky header ─────────────────────────────────────── -->
+    <header
+      class="sticky top-0 z-40 bg-white/90 backdrop-blur-md border-b border-slate-200/80"
+      role="banner"
+    >
+      <div class="max-w-lg mx-auto px-4 h-[56px] flex items-center justify-between gap-3">
 
-        <div class="flex items-center gap-2.5">
-          <span
-            class="w-7 h-7 rounded-lg bg-emerald-400 flex items-center justify-center text-slate-900 font-black text-xs leading-none select-none"
+        <!-- Brand -->
+        <div class="flex items-center gap-2.5 select-none" aria-label="MicroPay">
+          <div
+            class="w-8 h-8 rounded-[10px] bg-emerald-500 flex items-center justify-center text-white font-black text-[15px] shadow-sm"
+            style="box-shadow: 0 2px 8px rgba(16,185,129,0.35)"
             aria-hidden="true"
-          >M</span>
-          <span class="font-bold text-white tracking-tight" style="font-family: 'Syne', sans-serif">MicroPay</span>
+          >M</div>
+          <span class="font-bold text-[17px] tracking-tight text-slate-800">MicroPay</span>
         </div>
 
+        <!-- Right cluster -->
         <div class="flex items-center gap-2">
-          <span
+          <div
             v-if="!isOnline"
-            class="inline-flex items-center gap-1.5 bg-amber-400/10 border border-amber-400/20 text-amber-300 text-[11px] font-mono font-semibold px-2.5 py-1 rounded-full"
+            class="flex items-center gap-1.5 bg-amber-50 text-amber-700 text-[11px] font-semibold px-2.5 py-1 rounded-full ring-1 ring-amber-200"
             role="status"
-            aria-label="You are offline"
+            aria-label="No internet connection"
           >
-            <span class="w-1.5 h-1.5 rounded-full bg-amber-400 animate-pulse shrink-0" aria-hidden="true"></span>
+            <span class="w-1.5 h-1.5 rounded-full bg-amber-500 animate-pulse" aria-hidden="true"></span>
             Offline
-          </span>
-          
-          <div class="flex items-center gap-2 border border-white/[0.08] bg-white/[0.04] rounded-full pl-3 pr-2 py-1.5">
-            <span
-              class="text-[11px] font-mono text-slate-400 max-w-[80px] truncate"
-              :title="auth.user?.name"
-            >
-              {{ auth.user?.name || 'User' }}
-            </span>
+          </div>
+          <div class="flex items-center gap-1.5">
+            <div
+              class="w-7 h-7 rounded-full bg-slate-100 flex items-center justify-center text-xs font-bold text-slate-500 uppercase select-none"
+              :aria-label="`Logged in as ${userFullName}`"
+            >{{ userName.charAt(0) }}</div>
             <button
-              @click="handleLogout"
-              class="text-[11px] font-mono font-semibold text-slate-600 hover:text-slate-300 border border-white/[0.08] rounded-full px-2 py-0.5 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500"
-              aria-label="Log out"
-            >
-              out
-            </button>
+              @click="logout"
+              class="text-[12px] font-medium text-slate-400 hover:text-slate-700 transition-colors px-1 focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400 rounded"
+              aria-label="Sign out of MicroPay"
+            >Sign out</button>
           </div>
         </div>
+
       </div>
     </header>
 
-    <main class="max-w-lg mx-auto px-4 py-6 space-y-3">
+    <main class="max-w-lg mx-auto px-4 pb-10">
 
-      <section
-        class="card-enter rounded-2xl border border-white/[0.07] bg-[#111520] overflow-hidden"
-        :class="{ 'card-enter-active': mounted }"
-        style="--delay: 0ms"
-        aria-label="Account summary"
-      >
-        <div class="h-[2px] bg-gradient-to-r from-emerald-400 via-emerald-500 to-transparent" aria-hidden="true"></div>
+      <!-- ── Hero balance card ─────────────────────────────── -->
+      <section aria-label="Account balance" class="pt-5 pb-1">
+        <div class="hero-card relative overflow-hidden rounded-[24px] p-6 text-white select-none">
 
-        <div class="p-6">
-          <p class="text-[10px] font-mono text-slate-500 uppercase tracking-[0.2em]">Welcome back</p>
-          <h2 class="text-2xl font-black text-white mt-1 mb-5" style="font-family: 'Syne', sans-serif">
-            {{ userFirstName }}
-          </h2>
+          <div class="hero-circle hero-circle-1" aria-hidden="true"></div>
+          <div class="hero-circle hero-circle-2" aria-hidden="true"></div>
 
-          <div class="grid grid-cols-3 gap-2">
-            <div class="col-span-2 rounded-xl border border-white/[0.06] bg-white/[0.03] p-3.5">
-              <p class="text-[10px] font-mono text-slate-500 uppercase tracking-widest mb-1.5">Settled</p>
-              <p
-                class="text-xl font-black text-emerald-400 tabular-nums leading-none"
-                style="font-family: 'DM Mono', monospace"
-              >
-                <span class="text-sm text-emerald-600 mr-0.5" aria-hidden="true">₱</span>{{ formatAmount(totalSettled) }}
-              </p>
+          <!-- Top row -->
+          <div class="relative flex items-start justify-between mb-7">
+            <div>
+              <p class="text-[11px] font-semibold uppercase tracking-widest text-white/60 mb-0.5">Welcome back</p>
+              <p class="text-[20px] font-bold leading-none">{{ userName }}</p>
             </div>
-
-            <div class="flex flex-col gap-2">
-              <div class="flex-1 rounded-xl border border-white/[0.06] bg-white/[0.03] p-3 flex flex-col justify-between">
-                <p class="text-[9px] font-mono text-slate-500 uppercase tracking-widest leading-none">Pending</p>
-                <p class="text-lg font-black text-amber-400 tabular-nums leading-none mt-1.5" style="font-family: 'DM Mono', monospace">
-                  {{ pendingCount }}
-                </p>
-              </div>
-              <div class="flex-1 rounded-xl border border-white/[0.06] bg-white/[0.03] p-3 flex flex-col justify-between">
-                <p class="text-[9px] font-mono text-slate-500 uppercase tracking-widest leading-none">Flagged</p>
-                <p
-                  :class="['text-lg font-black tabular-nums leading-none mt-1.5', totalFlagged > 0 ? 'text-red-400' : 'text-slate-600']"
-                  style="font-family: 'DM Mono', monospace"
-                >
-                  {{ totalFlagged }}
-                </p>
-              </div>
+            <div
+              class="text-[11px] font-semibold bg-white/15 text-white/90 px-2.5 py-1 rounded-full ring-1 ring-white/20"
+              role="status"
+              :aria-label="isOnline ? 'Connected' : 'Offline'"
+            >
+              <span :class="['inline-block w-1.5 h-1.5 rounded-full mr-1 mb-px', isOnline ? 'bg-emerald-400' : 'bg-amber-400 animate-pulse']" aria-hidden="true"></span>
+              {{ isOnline ? 'Live' : 'Offline' }}
             </div>
           </div>
+
+          <!-- Balance -->
+          <div class="relative">
+            <p class="text-[11px] font-semibold uppercase tracking-widest text-white/50 mb-1">Total Settled</p>
+            <p class="text-[38px] font-black leading-none tracking-tight tabular-nums">
+              {{ formatMoney(settledTotal) }}
+            </p>
+          </div>
+
+          <!-- Stats row -->
+          <div class="relative flex items-center mt-6 pt-4 border-t border-white/15 gap-0">
+            <div class="flex-1 text-center">
+              <p class="text-[10px] font-semibold text-white/50 uppercase tracking-wider mb-1">Pending</p>
+              <p class="text-[17px] font-bold tabular-nums">{{ pendingCount }}</p>
+            </div>
+            <div class="w-px h-8 bg-white/20" aria-hidden="true"></div>
+            <div class="flex-1 text-center">
+              <p class="text-[10px] font-semibold text-white/50 uppercase tracking-wider mb-1">Flagged</p>
+              <p :class="['text-[17px] font-bold tabular-nums', flaggedCount > 0 ? 'text-red-300' : '']">
+                {{ flaggedCount }}
+              </p>
+            </div>
+            <div class="w-px h-8 bg-white/20" aria-hidden="true"></div>
+            <div class="flex-1 text-center">
+              <p class="text-[10px] font-semibold text-white/50 uppercase tracking-wider mb-1">Total</p>
+              <p class="text-[17px] font-bold tabular-nums">{{ transactions.length }}</p>
+            </div>
+          </div>
+
         </div>
       </section>
 
+      <!-- ── Flagged alert banner ──────────────────────────── -->
       <section
-        class="card-enter grid grid-cols-2 gap-2.5"
-        :class="{ 'card-enter-active': mounted }"
-        style="--delay: 60ms"
-        aria-label="Quick actions"
+        v-if="flaggedCount > 0"
+        class="mt-3"
+        role="alert"
+        aria-live="polite"
       >
-        <RouterLink
-          to="/pay"
-          class="group flex flex-col items-center justify-center gap-2 rounded-2xl bg-emerald-400 hover:bg-emerald-300 active:bg-emerald-500 text-slate-900 py-5 transition-all duration-150 focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400"
-          aria-label="Start a new payment"
-        >
-          <span class="w-8 h-8 rounded-lg bg-slate-900/10 flex items-center justify-center text-lg font-black group-hover:scale-110 transition-transform" aria-hidden="true">+</span>
-          <span class="text-xs font-bold tracking-wide" style="font-family: 'Syne', sans-serif">New Payment</span>
-        </RouterLink>
-
-        <RouterLink
-          to="/history"
-          class="group flex flex-col items-center justify-center gap-2 rounded-2xl border border-white/[0.08] bg-[#111520] hover:bg-white/[0.05] active:bg-white/[0.03] text-white py-5 transition-all duration-150 focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400"
-          aria-label="View all transaction history"
-        >
-          <span class="text-xs font-bold text-slate-300 tracking-wide" style="font-family: 'Syne', sans-serif">History</span>
-        </RouterLink>
-      </section>
-
-      <section
-        class="card-enter rounded-2xl border border-white/[0.07] bg-[#111520] overflow-hidden"
-        :class="{ 'card-enter-active': mounted }"
-        style="--delay: 120ms"
-        aria-label="Recent transactions"
-      >
-        <div class="flex items-center justify-between px-5 py-4 border-b border-white/[0.06]">
-          <h2 class="text-[10px] font-mono text-slate-500 uppercase tracking-[0.18em]">Recent</h2>
+        <div class="flex items-center gap-3 bg-red-50 border border-red-200 rounded-2xl px-4 py-3">
+          <div class="w-8 h-8 rounded-full bg-red-100 flex items-center justify-center shrink-0 text-sm" aria-hidden="true">🚩</div>
+          <div class="flex-1 min-w-0">
+            <p class="text-sm font-bold text-red-700">
+              {{ flaggedCount }} flagged transaction{{ flaggedCount > 1 ? 's' : '' }}
+            </p>
+            <p class="text-xs text-red-500 mt-0.5">Review required before settlement.</p>
+          </div>
           <RouterLink
             to="/history"
-            class="text-[11px] font-mono font-semibold text-emerald-400 hover:text-emerald-300 transition-colors focus:outline-none focus-visible:ring-1 focus-visible:ring-emerald-500 rounded"
+            class="text-xs font-bold text-red-600 hover:text-red-700 shrink-0 focus:outline-none focus-visible:ring-2 focus-visible:ring-red-400 rounded whitespace-nowrap"
+          >Review →</RouterLink>
+        </div>
+      </section>
+
+      <!-- ── Quick actions ─────────────────────────────────── -->
+      <section class="mt-4" aria-label="Quick actions">
+        <div class="grid grid-cols-2 gap-3">
+
+          <RouterLink
+            to="/pay"
+            class="action-primary group flex items-center justify-center gap-2.5 py-[18px] rounded-2xl focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400"
+            aria-label="Create a new payment"
           >
-            View all
+            <span
+              class="w-7 h-7 rounded-lg bg-white/20 flex items-center justify-center font-bold text-[17px] group-hover:scale-110 transition-transform text-white"
+              aria-hidden="true"
+            >+</span>
+            <span class="text-sm font-bold text-white">New Payment</span>
           </RouterLink>
+
+          <RouterLink
+            to="/history"
+            class="group flex items-center justify-center gap-2.5 py-[18px] rounded-2xl bg-white border border-slate-200 hover:border-slate-300 hover:bg-slate-50 transition-colors shadow-sm focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400"
+            aria-label="View transaction history"
+          >
+            <span
+              class="w-7 h-7 rounded-lg bg-slate-100 flex items-center justify-center text-[16px] group-hover:scale-110 transition-transform text-slate-600"
+              aria-hidden="true"
+            >≡</span>
+            <span class="text-sm font-bold text-slate-700">History</span>
+          </RouterLink>
+
+        </div>
+      </section>
+
+      <!-- ── Recent transactions ───────────────────────────── -->
+      <section class="mt-5" aria-label="Recent transactions">
+
+        <div class="flex items-center justify-between mb-3 px-1">
+          <h2 class="text-[12px] font-bold text-slate-400 uppercase tracking-widest">Recent Activity</h2>
+          <RouterLink
+            to="/history"
+            class="text-[12px] font-semibold text-emerald-600 hover:text-emerald-500 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400 rounded"
+          >See all →</RouterLink>
         </div>
 
-        <ul v-if="loading" aria-label="Loading transactions" class="divide-y divide-white/[0.04]">
-          <li v-for="n in 4" :key="n" class="px-5 py-4 flex items-center justify-between animate-pulse">
-            <div class="space-y-2">
-              <div class="h-4 bg-white/5 rounded w-24"></div>
-              <div class="h-3 bg-white/5 rounded w-16"></div>
-            </div>
-            <div class="h-5 bg-white/5 rounded-full w-18"></div>
-          </li>
-        </ul>
+        <div class="bg-white rounded-2xl border border-slate-200/80 overflow-hidden" style="box-shadow: 0 1px 4px rgba(0,0,0,0.06)">
 
-        <div v-else-if="recentTransactions.length === 0" class="flex flex-col items-center justify-center py-12 text-center px-4">
-          <p class="text-sm font-semibold text-slate-500" style="font-family: 'Syne', sans-serif">No transactions yet</p>
-        </div>
-
-        <ul v-else class="divide-y divide-white/[0.04]">
-          <li v-for="tx in recentTransactions" :key="tx.id" class="group">
-            <button
-              class="w-full flex items-center justify-between px-5 py-3.5 text-left hover:bg-white/[0.025] transition-colors focus:outline-none"
-              @click="router.push({ name: 'transaction.show', params: { id: tx.id } })"
+          <!-- Skeletons -->
+          <ul v-if="loading" aria-label="Loading" aria-busy="true">
+            <li
+              v-for="n in 4"
+              :key="n"
+              class="flex items-center gap-3 px-4 py-[14px] border-b border-slate-100 last:border-0 animate-pulse"
+              aria-hidden="true"
             >
-              <div class="min-w-0 flex-1">
-                <p class="text-sm font-bold text-white tabular-nums" style="font-family: 'DM Mono', monospace">
-                  <span class="text-slate-500 text-xs mr-0.5" aria-hidden="true">₱</span>{{ formatAmount(tx.amount_centavos) }}
-                </p>
-                <p class="text-[11px] text-slate-500 mt-0.5 truncate max-w-[160px]">
-                  {{ tx.notes ?? tx.payment_method }}
-                </p>
+              <div class="w-10 h-10 rounded-xl bg-slate-100 shrink-0"></div>
+              <div class="flex-1 space-y-2">
+                <div class="h-3.5 bg-slate-100 rounded w-32"></div>
+                <div class="h-3 bg-slate-100 rounded w-20"></div>
               </div>
+              <div class="text-right space-y-2">
+                <div class="h-3.5 bg-slate-100 rounded w-16 ml-auto"></div>
+                <div class="h-5 bg-slate-100 rounded-full w-14 ml-auto"></div>
+              </div>
+            </li>
+          </ul>
 
-              <div class="flex flex-col items-end gap-1.5 ml-3 shrink-0">
-                <span :class="['inline-flex items-center gap-1.5 text-[10px] font-mono font-semibold px-2.5 py-1 rounded-full border', getStatus(tx.status).pill]">
-                  {{ getStatus(tx.status).label }}
-                </span>
-                <span class="text-[10px] font-mono text-slate-600">{{ formatDate(tx.created_at) }}</span>
-              </div>
-            </button>
-          </li>
-        </ul>
+          <!-- Empty -->
+          <div
+            v-else-if="recent.length === 0"
+            class="flex flex-col items-center justify-center py-12 px-4 text-center"
+            role="status"
+          >
+            <div class="w-14 h-14 rounded-2xl bg-slate-100 flex items-center justify-center text-2xl mb-3" aria-hidden="true">💳</div>
+            <p class="text-sm font-bold text-slate-700">No transactions yet</p>
+            <p class="text-xs text-slate-400 mt-1 max-w-[180px]">
+              Create your first payment to get started.
+            </p>
+            <RouterLink
+              to="/pay"
+              class="mt-4 inline-flex items-center gap-1.5 bg-emerald-500 text-white text-xs font-bold px-4 py-2 rounded-full hover:bg-emerald-400 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400"
+            >+ New Payment</RouterLink>
+          </div>
+
+          <!-- Rows -->
+          <ul v-else role="list">
+            <li
+              v-for="tx in recent"
+              :key="tx.id"
+              class="border-b border-slate-100 last:border-0"
+            >
+              <button
+                class="w-full flex items-center gap-3 px-4 py-[14px] hover:bg-slate-50 transition-colors text-left focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-emerald-400"
+                @click="router.push({ name: 'transaction.show', params: { id: tx.id } })"
+                :aria-label="`${formatMoney(tx.amount_centavos)} — ${getStatus(tx.status).label}`"
+              >
+                <!-- Icon -->
+                <div
+                  class="w-10 h-10 rounded-xl bg-slate-100 flex items-center justify-center text-[18px] shrink-0"
+                  aria-hidden="true"
+                >{{ methodIcon(tx.payment_method) }}</div>
+
+                <!-- Label + date -->
+                <div class="flex-1 min-w-0">
+                  <p class="text-[14px] font-semibold text-slate-800 truncate leading-snug">
+                    {{ tx.notes ?? tx.payment_method ?? 'Payment' }}
+                  </p>
+                  <p class="text-[11px] text-slate-400 mt-0.5 leading-none">
+                    {{ formatShortDate(tx.created_at) }}
+                  </p>
+                </div>
+
+                <!-- Amount + badge -->
+                <div class="text-right shrink-0 space-y-1.5">
+                  <p class="text-[14px] font-bold text-slate-900 tabular-nums leading-snug">
+                    {{ formatMoney(tx.amount_centavos) }}
+                  </p>
+                  <span
+                    :class="[
+                      'inline-flex items-center gap-1 text-[11px] font-semibold px-2 py-0.5 rounded-full ring-1',
+                      getStatus(tx.status).bg,
+                      getStatus(tx.status).text,
+                      getStatus(tx.status).ring,
+                    ]"
+                  >
+                    <span
+                      :class="[
+                        'w-1.5 h-1.5 rounded-full bg-current',
+                        (tx.status === 'pending' || tx.status === 'fraud_check') ? 'animate-pulse' : 'opacity-60'
+                      ]"
+                      aria-hidden="true"
+                    ></span>
+                    {{ getStatus(tx.status).label }}
+                  </span>
+                </div>
+
+              </button>
+            </li>
+          </ul>
+
+        </div>
       </section>
 
     </main>
@@ -293,29 +381,50 @@ const userFirstName = computed(() => {
 </template>
 
 <style scoped>
-.dash-root {
-  font-family: 'DM Sans', sans-serif;
-  -webkit-font-smoothing: antialiased;
+@import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800;900&display=swap');
+
+/* Hero card */
+.hero-card {
+  background:
+    radial-gradient(ellipse 130% 90% at 115% 130%, rgba(52, 211, 153, 0.30) 0%, transparent 55%),
+    radial-gradient(ellipse 90% 90% at -20% -20%, rgba(99, 102, 241, 0.22) 0%, transparent 55%),
+    linear-gradient(140deg, #0F172A 0%, #1E293B 65%, #0C1A2E 100%);
+  box-shadow:
+    0 8px 32px rgba(15, 23, 42, 0.28),
+    0 2px 8px rgba(15, 23, 42, 0.12),
+    inset 0 1px 0 rgba(255, 255, 255, 0.06);
 }
 
-.card-enter {
-  opacity: 0;
-  transform: translateY(12px);
-  transition: opacity 360ms ease, transform 360ms cubic-bezier(0.22, 1, 0.36, 1);
-  transition-delay: var(--delay, 0ms);
+.hero-circle {
+  position: absolute;
+  border-radius: 50%;
+  pointer-events: none;
+}
+.hero-circle-1 {
+  width: 220px; height: 220px;
+  top: -80px; right: -60px;
+  background: radial-gradient(circle, rgba(52, 211, 153, 0.10) 0%, transparent 70%);
+  border: 1px solid rgba(255, 255, 255, 0.05);
+}
+.hero-circle-2 {
+  width: 140px; height: 140px;
+  bottom: -50px; left: -30px;
+  background: radial-gradient(circle, rgba(99, 102, 241, 0.10) 0%, transparent 70%);
+  border: 1px solid rgba(255, 255, 255, 0.04);
 }
 
-.card-enter-active {
-  opacity: 1;
+/* Primary action button */
+.action-primary {
+  background: linear-gradient(135deg, #10B981 0%, #059669 100%);
+  box-shadow: 0 4px 14px rgba(16, 185, 129, 0.35), inset 0 1px 0 rgba(255, 255, 255, 0.15);
+  transition: transform 0.1s ease, box-shadow 0.15s ease;
+}
+.action-primary:hover {
+  box-shadow: 0 6px 20px rgba(16, 185, 129, 0.42), inset 0 1px 0 rgba(255, 255, 255, 0.15);
+  transform: translateY(-1px);
+}
+.action-primary:active {
   transform: translateY(0);
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .card-enter,
-  .card-enter-active {
-    transition: none;
-    transform: none;
-    opacity: 1;
-  }
+  box-shadow: 0 2px 8px rgba(16, 185, 129, 0.25);
 }
 </style>
