@@ -13,6 +13,7 @@ export async function fetchCsrfCookie() {
   });
 }
 
+
 export async function register(data) {
   await fetchCsrfCookie();
   return apiClient.post('/auth/register', data);
