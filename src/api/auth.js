@@ -6,22 +6,34 @@ import apiClient from './client'
  * This MUST be called before any state-changing auth requests.
  */
 export async function fetchCsrfCookie() {
-  // Let Sanctum set both the session and readable XSRF cookies.
-  // Axios will read XSRF-TOKEN and send X-XSRF-TOKEN automatically.
+  // 1) Establish/refresh the session cookie with the backend (Sanctum).
   await apiClient.get('/sanctum/csrf-cookie', {
     baseURL: import.meta.env.VITE_API_URL.replace(/\/api\/?$/, '') 
   });
+
+  // 2) Cross-site fallback: fetch a session-bound CSRF token as JSON.
+  // Needed when the browser blocks JS access to the XSRF-TOKEN cookie on a different TLD.
+  const { data } = await apiClient.get('/auth/csrf');
+
+  // 3) Send the token on subsequent state-changing requests.
+  apiClient.defaults.headers.common['X-CSRF-TOKEN'] = data.csrf_token;
 }
 
 
 export async function register(data) {
   await fetchCsrfCookie();
-  return apiClient.post('/auth/register', data);
+  const response = await apiClient.post('/auth/register', data);
+  // Session regeneration can rotate the CSRF token; re-sync immediately.
+  await fetchCsrfCookie();
+  return response;
 }
 
 export async function login(data) {
   await fetchCsrfCookie();
-  return apiClient.post('/auth/login', data);
+  const response = await apiClient.post('/auth/login', data);
+  // Session regeneration can rotate the CSRF token; re-sync immediately.
+  await fetchCsrfCookie();
+  return response;
 }
 
 export async function logout() {
