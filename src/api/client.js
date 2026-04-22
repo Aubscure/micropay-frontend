@@ -36,23 +36,19 @@ apiClient.interceptors.request.use((config) => {
  */
 // src/api/client.js
 
+// src/api/client.js
 apiClient.interceptors.response.use(
   (response) => response,
   (error) => {
     const status = error.response?.status;
-    
-    // Check if the user is already on an authentication page
-    const isAuthPage = window.location.pathname === '/login' || 
+    const isAuthPath = window.location.pathname === '/login' || 
                        window.location.pathname === '/register';
 
-    // 401: Unauthorized | 419: CSRF Token Mismatch
-    if ((status === 401 || status === 419) && !isAuthPage) {
-      
-      // Only clear cache and redirect if we aren't already trying to log in
+    // 401 (Unauthorized) or 419 (CSRF Mismatch)
+    if ((status === 401 || status === 419) && !isAuthPath) {
+      // Only clear cache and redirect if NOT already on an auth page
       localStorage.removeItem('auth_user');
       localStorage.removeItem('auth_merchant');
-
-      // Force a hard reload to the login page to reset the CSRF state
       window.location.href = '/login';
     }
 
