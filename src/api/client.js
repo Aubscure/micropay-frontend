@@ -34,26 +34,29 @@ apiClient.interceptors.request.use((config) => {
  * Response Interceptor
  * Handles global architectural rejections securely.
  */
+// src/api/client.js
+
 apiClient.interceptors.response.use(
   (response) => response,
-
   (error) => {
-    const status = error.response?.status
+    const status = error.response?.status;
+    
+    // Check if the user is already on an authentication page
+    const isAuthPage = window.location.pathname === '/login' || 
+                       window.location.pathname === '/register';
 
-    // 401: The server explicitly rejected the session (Unauthenticated).
-    // 419: Laravel specific. The CSRF token was missing or mismatched.
-    if (status === 401 || status === 419) {
+    // 401: Unauthorized | 419: CSRF Token Mismatch
+    if ((status === 401 || status === 419) && !isAuthPage) {
       
-      // Clear UI-only cache data. We no longer clear auth_token because it does not exist.
-      localStorage.removeItem('auth_user')
-      localStorage.removeItem('auth_merchant')
+      // Only clear cache and redirect if we aren't already trying to log in
+      localStorage.removeItem('auth_user');
+      localStorage.removeItem('auth_merchant');
 
-      // Hard redirect to force a clean slate and re-bootstrap the CSRF phase.
-      window.location.href = '/login'
+      // Force a hard reload to the login page to reset the CSRF state
+      window.location.href = '/login';
     }
 
-    // Re-throw the error so specific components can render UI warnings if necessary.
-    return Promise.reject(error)
+    return Promise.reject(error);
   }
 )
 
