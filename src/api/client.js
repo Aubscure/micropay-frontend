@@ -1,5 +1,6 @@
 // src/api/client.js
 import axios from 'axios'
+import { useAuthStore } from '@/stores/auth'
 
 /**
  * Central Axios instance for all API calls.
@@ -27,9 +28,17 @@ const apiClient = axios.create({
  * The Authorization Bearer injection logic has been completely eradicated.
  */
 apiClient.interceptors.request.use((config) => {
-  // Authentication is now handled natively by the browser.
-  // This interceptor is kept clean, but remains available if you need to 
-  // inject non-security headers in the future.
+  // Primary auth remains cookie-based.
+  // Fallback: attach Sanctum token if present (cross-domain session instability).
+  try {
+    const auth = useAuthStore()
+    if (auth?.token) {
+      config.headers = config.headers ?? {}
+      config.headers.Authorization = `Bearer ${auth.token}`
+    }
+  } catch {
+    // Store may not be initialized yet (boot order); ignore safely.
+  }
   return config
 })
 

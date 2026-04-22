@@ -11,6 +11,7 @@ export const useAuthStore = defineStore('auth', () => {
   const merchant = ref(null)
   const loading  = ref(false)
   const error    = ref(null)
+  const token    = ref(null)
 
   // Getters 
   // Authentication is now strictly derived from the presence of a validated user object.
@@ -34,6 +35,7 @@ export const useAuthStore = defineStore('auth', () => {
       // If the backend rejects the cookie, clear all reactive state immediately.
       user.value = null
       merchant.value = null
+      token.value = null
       return false
     }
   }
@@ -50,7 +52,10 @@ async function loginUser(credentials) {
 
   try {
     // 1. Perform the login handshake (which now handles its own token resync)
-    await login(credentials)
+    const response = await login(credentials)
+
+    // 1b. Store fallback token (used when cookie sessions aren't stable cross-domain).
+    token.value = response.data.token ?? null
     
     // 2. TRUST BUT VERIFY: Explicitly fetch the user profile using the new session cookie.
     // If this fails, it means the browser blocked the cookie or the session died.
@@ -80,7 +85,8 @@ async function registerUser(data) {
   error.value   = null
 
   try {
-    await register(data)
+    const response = await register(data)
+    token.value = response.data.token ?? null
     
     // TRUST BUT VERIFY
     const isVerified = await fetchUser()
@@ -130,11 +136,12 @@ async function registerUser(data) {
     } finally {
       user.value     = null
       merchant.value = null
+      token.value    = null
     }
   }
 
   return {
-    user, merchant, loading, error,
+    user, merchant, loading, error, token,
     isAuthenticated, hasMerchant,
     fetchUser, loginUser, registerUser, loadMerchant, logoutUser,
   }
