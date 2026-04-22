@@ -2,7 +2,7 @@
 import { ref, computed } from 'vue'
 import { defineStore } from 'pinia'
 import { login, register, logout, getMe } from '@/api/auth'
-import { getMyMerchant } from '@/api/merchants'
+import { getMyMerchant, createMerchant } from '@/api/merchants'
 
 export const useAuthStore = defineStore('auth', () => {
   // State 
@@ -108,6 +108,15 @@ async function registerUser(data) {
 }
 
   /**
+   * Create a merchant profile for the current user.
+   */
+  async function createMyMerchant(payload) {
+    const response = await createMerchant(payload)
+    merchant.value = response.data.data
+    return merchant.value
+  }
+
+  /**
    * Load the merchant profile for the current user.
    */
   async function loadMerchant() {
@@ -143,6 +152,6 @@ async function registerUser(data) {
   return {
     user, merchant, loading, error, token,
     isAuthenticated, hasMerchant,
-    fetchUser, loginUser, registerUser, loadMerchant, logoutUser,
+    fetchUser, loginUser, registerUser, loadMerchant, createMyMerchant, logoutUser,
   }
 })

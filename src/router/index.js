@@ -39,6 +39,12 @@ const router = createRouter({
       meta: { requiresAuth: true },
     },
     {
+      path: '/merchant/setup',
+      name: 'merchant.setup',
+      component: () => import('@/views/MerchantSetupView.vue'),
+      meta: { requiresAuth: true },
+    },
+    {
       path: '/transactions/:id',
       name: 'transaction.show',
       component: () => import('@/views/TransactionDetailView.vue'),
@@ -76,6 +82,17 @@ router.beforeEach(async (to) => {
   // Route requires login but user is not logged in
   if (to.meta.requiresAuth && !authStore.isAuthenticated) {
     return { name: 'login' }
+  }
+
+  // If logged in but no merchant profile, force merchant setup
+  if (
+    authStore.isAuthenticated &&
+    !authStore.hasMerchant &&
+    to.name !== 'merchant.setup' &&
+    to.name !== 'login' &&
+    to.name !== 'register'
+  ) {
+    return { name: 'merchant.setup' }
   }
 
   // Route is for guests only but user is already logged in
