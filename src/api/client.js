@@ -32,9 +32,10 @@ apiClient.interceptors.request.use((config) => {
   // Fallback: attach Sanctum token if present (cross-domain session instability).
   try {
     const auth = useAuthStore()
-    if (auth?.token) {
+    const token = auth?.token?.value ?? auth?.token ?? null
+    if (token) {
       config.headers = config.headers ?? {}
-      config.headers.Authorization = `Bearer ${auth.token}`
+      config.headers.Authorization = `Bearer ${token}`
     }
   } catch {
     // Store may not be initialized yet (boot order); ignore safely.
