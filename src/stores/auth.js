@@ -41,52 +41,65 @@ export const useAuthStore = defineStore('auth', () => {
   /**
    * Log in user using the secure CSRF handshake.
    */
-  async function loginUser(credentials) {
-    loading.value = true
-    error.value   = null
-
-    try {
-      const response = await login(credentials)
-      
-      // We no longer expect a token from the backend, only the validated user payload.
-      user.value = response.data.user
-
-      // Try to load their merchant profile
-      await loadMerchant()
-
-      return true
-    } catch (err) {
-      error.value = err.response?.data?.errors?.email?.[0]
-                 ?? err.response?.data?.message
-                 ?? 'Login failed.'
-      return false
-    } finally {
-      loading.value = false
-    }
-  }
-
-  /**
-   * Register a new account.
+/**
+   * Log in user using the secure CSRF handshake.
    */
-  async function registerUser(data) {
-    loading.value = true
-    error.value   = null
+async function loginUser(credentials) {
+  loading.value = true
+  error.value   = null
 
-    try {
-      const response = await register(data)
-      
-      user.value = response.data.user
+  try {
+    // 1. Perform the login handshake (which now handles its own token resync)
+    await login(credentials)
+    
+    // 2. TRUST BUT VERIFY: Explicitly fetch the user profile using the new session cookie.
+    // If this fails, it means the browser blocked the cookie or the session died.
+    const isVerified = await fetchUser()
 
-      return true
-    } catch (err) {
-      error.value = err.response?.data?.errors
-                 ?? err.response?.data?.message
-                 ?? 'Registration failed.'
-      return false
-    } finally {
-      loading.value = false
+    if (!isVerified) {
+        throw new Error('Session could not be established. Please check your browser cookie settings.');
     }
+
+    return true
+  } catch (err) {
+    error.value = err.response?.data?.errors?.email?.[0]
+               ?? err.response?.data?.message
+               ?? err.message
+               ?? 'Login failed.'
+    return false
+  } finally {
+    loading.value = false
   }
+}
+
+/**
+ * Register a new account.
+ */
+async function registerUser(data) {
+  loading.value = true
+  error.value   = null
+
+  try {
+    await register(data)
+    
+    // TRUST BUT VERIFY
+    const isVerified = await fetchUser()
+
+    if (!isVerified) {
+        throw new Error('Session could not be established after registration.');
+    }
+
+    return true
+  } catch (err) {
+    error.value = err.response?.data?.errors
+               ?? err.response?.data?.message
+               ?? err.message
+               ?? 'Registration failed.'
+    return false
+  } finally {
+    loading.value = false
+  }
+}
 
   /**
    * Load the merchant profile for the current user.
