@@ -2,52 +2,22 @@
 
 import { ref } from 'vue'
 import { encryptPayload, decryptPayload } from '@/utils/crypto'
+import { useAuthStore } from '@/stores/auth'
 
-/**
- * Manages the offline transaction queue using IndexedDB.
- *
- * When the device is offline, transactions are saved here.
- * When connectivity is restored, they are synced to the server.
- *
- * IndexedDB is a browser-based database — data persists even
- * after the browser is closed, unlike localStorage.
- */
+const DB_NAME = 'micropay_offline'
+const DB_VERSION = 1
+const STORE_NAME = 'pending_transactions'
 
-// Database configuration constants
-const DB_NAME = 'micropay_offline'    // Database name
-const DB_VERSION = 1                   // Version — increment when schema changes
-const STORE_NAME = 'pending_transactions'  // "Table" name in IndexedDB
-
-/**
- * Read the user's auth token from localStorage.
- * This is the same token stored by the login flow and used by api/client.js.
- *
- * @returns {string|null}
- */
-function getToken() {
-  return localStorage.getItem('auth_token')
-}
-
-/**
- * Opens (or creates) the IndexedDB database.
- * Returns a Promise that resolves to the IDBDatabase object.
- */
 function openDatabase() {
   return new Promise((resolve, reject) => {
-    // Open the database — creates it if it doesn't exist
     const request = indexedDB.open(DB_NAME, DB_VERSION)
 
-    // Called only when database is created or version is upgraded
     request.onupgradeneeded = (event) => {
       const db = event.target.result
-
-      // Create the object store (like a SQL table) if it doesn't exist
       if (!db.objectStoreNames.contains(STORE_NAME)) {
         const store = db.createObjectStore(STORE_NAME, {
-          keyPath: 'id',  // Use the transaction UUID as the key
+          keyPath: 'id', 
         })
-
-        // Index by status so we can query "all pending" efficiently
         store.createIndex('status', 'status', { unique: false })
       }
     }
@@ -57,69 +27,60 @@ function openDatabase() {
   })
 }
 
-/**
- * The composable — a function that returns reactive state and methods.
- * Call this in any Vue component: const { addToQueue, syncQueue } = useOfflineQueue()
- */
 export function useOfflineQueue() {
-  // Reactive count of pending offline transactions
   const pendingCount = ref(0)
 
   /**
-   * Save a transaction to the offline queue.
-   *
-   * @param {Object} transaction - Transaction data object
-   * @param {string} transaction.id - UUID (generate with crypto.randomUUID())
-   * @param {number} transaction.amount_centavos
-   * @param {string} transaction.currency
-   * @param {string} transaction.payment_method
+   * Retrieves the secure key material from active memory.
+   * Throws a fatal error if the user is not authenticated.
    */
+  function getSecureNonce() {
+    const authStore = useAuthStore()
+    const nonce = authStore.user?.offline_encryption_nonce
+    
+    if (!nonce) {
+      throw new Error('Security Violation: Cannot read or write to offline queue without an active session.')
+    }
+    return nonce
+  }
+
   async function addToQueue(transaction) {
     const db = await openDatabase()
-    const token = getToken()
+    
+    // Will throw and abort the operation if memory is wiped
+    const nonce = getSecureNonce()
 
-    // Encrypt the transaction payload before storage
-    const encrypted = await encryptPayload(transaction, token)
+    const encrypted = await encryptPayload(transaction, nonce)
 
     return new Promise((resolve, reject) => {
-      // Start a read-write transaction on the object store
       const tx = db.transaction(STORE_NAME, 'readwrite')
       const store = tx.objectStore(STORE_NAME)
 
-      // Add metadata to track when it was queued
       const record = {
-        id:        transaction.id,   // Plain — needed for IndexedDB key
-        status:    'queued',         // Plain — needed for index queries
+        id:        transaction.id,   
+        status:    'queued',         
         queued_at: new Date().toISOString(),
-        payload:   encrypted,        // Encrypted transaction data
+        payload:   encrypted,        
       }
 
-      // put() adds or updates the record
       const request = store.put(record)
-
 
       request.onsuccess = () => { pendingCount.value++; resolve(record) }
       request.onerror   = () => reject(request.error)
     })
-
   }
 
-  /**
-   * Load all pending transactions from IndexedDB.
-   *
-   * @returns {Promise<Array>} Array of pending transaction objects
-   */
   async function getQueue() {
     const db = await openDatabase()
-    const token = getToken()
+    
+    // Will throw and abort if memory is wiped
+    const nonce = getSecureNonce()
 
     return new Promise((resolve, reject) => {
       const tx = db.transaction(STORE_NAME, 'readonly')
       const store = tx.objectStore(STORE_NAME)
       const index = store.index('status')
       
-
-      // Query only records with status = 'queued'
       const request = index.getAll('queued')
 
       request.onsuccess = async () => {
@@ -128,12 +89,10 @@ export function useOfflineQueue() {
 
         for (const record of records) {
           try {
-            // Decrypt the payload — throws if tampered
-            const data = await decryptPayload(record.payload, token)
+            const data = await decryptPayload(record.payload, nonce)
             decrypted.push(data)
           } catch (e) {
-            // Payload was tampered with — discard it and log
-            console.error(`Tampered record detected and discarded: ${record.id}`)
+            console.error(`Tampered or unreadable record detected and discarded: ${record.id}`)
           }
         }
 
@@ -145,11 +104,6 @@ export function useOfflineQueue() {
     })
   }
 
-  /**
-   * Remove a transaction from the queue after successful sync.
-   *
-   * @param {string} id - UUID of the transaction to remove
-   */
   async function removeFromQueue(id) {
     const db = await openDatabase()
 
@@ -160,14 +114,13 @@ export function useOfflineQueue() {
 
       request.onsuccess = () => { if (pendingCount.value > 0) pendingCount.value--; resolve() }
       request.onerror   = () => reject(request.error)
-
     })
   }
 
   return {
-    pendingCount,   // Reactive number of queued transactions
-    addToQueue,     // Save transaction offline
-    getQueue,       // Get all queued transactions
-    removeFromQueue // Remove after successful sync
+    pendingCount, 
+    addToQueue,   
+    getQueue,     
+    removeFromQueue 
   }
 }

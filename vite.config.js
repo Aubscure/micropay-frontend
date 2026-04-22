@@ -43,8 +43,10 @@ export default defineConfig({
 
         runtimeCaching: [
           {
-            // Match your Laravel Cloud API
-            urlPattern: /^https:\/\/micropay-api-main-.*\.laravel\.cloud\/api\/.*/i,
+            // SECURITY MANDATE: The negative lookahead (?!auth) ensures that 
+            // any URL containing /api/auth/ is strictly ignored by the Service Worker.
+            // This prevents the offline_encryption_nonce from being written to disk.
+            urlPattern: /^https:\/\/micropay-api-main-.*\.laravel\.cloud\/api\/(?!auth).*/i,
             handler: 'NetworkFirst',
             options: {
               cacheName: 'api-cache',

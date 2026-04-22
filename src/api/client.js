@@ -3,53 +3,56 @@ import axios from 'axios'
 
 /**
  * Central Axios instance for all API calls.
- * Every request goes through here — auth headers, base URL,
- * and error handling are configured once in this file.
+ * Configured strictly for secure, first-party cookie authentication.
  */
 const apiClient = axios.create({
-  // Read the API URL from .env — never hardcode it
   baseURL: import.meta.env.VITE_API_URL,
 
   headers: {
     'Content-Type': 'application/json',
     'Accept': 'application/json',
   },
+
+  // SECURITY MANDATE: This is the linchpin of the new architecture.
+  // It instructs the browser to attach secure cookies and the X-XSRF-TOKEN 
+  // to every cross-origin request automatically.
+  withCredentials: true,
 })
 
 /**
- * Request interceptor — runs before every request is sent.
- * Automatically attaches the Bearer token if one is stored.
+ * Request Interceptor
+ * The Authorization Bearer injection logic has been completely eradicated.
  */
 apiClient.interceptors.request.use((config) => {
-  // Read token from localStorage on every request
-  // so we always use the latest token
-  const token = localStorage.getItem('auth_token')
-
-  if (token) {
-    config.headers.Authorization = `Bearer ${token}`
-  }
-
+  // Authentication is now handled natively by the browser.
+  // This interceptor is kept clean, but remains available if you need to 
+  // inject non-security headers in the future.
   return config
 })
 
 /**
- * Response interceptor — runs after every response.
- * Handles global errors like 401 (token expired).
+ * Response Interceptor
+ * Handles global architectural rejections securely.
  */
 apiClient.interceptors.response.use(
-  // Success — just pass the response through
   (response) => response,
 
-  // Error — handle globally
   (error) => {
-    if (error.response?.status === 401) {
-      // Token expired or invalid — clear storage and redirect to login
-      localStorage.removeItem('auth_token')
+    const status = error.response?.status
+
+    // 401: The server explicitly rejected the session (Unauthenticated).
+    // 419: Laravel specific. The CSRF token was missing or mismatched.
+    if (status === 401 || status === 419) {
+      
+      // Clear UI-only cache data. We no longer clear auth_token because it does not exist.
       localStorage.removeItem('auth_user')
+      localStorage.removeItem('auth_merchant')
+
+      // Hard redirect to force a clean slate and re-bootstrap the CSRF phase.
       window.location.href = '/login'
     }
 
-    // Re-throw so individual calls can still handle their own errors
+    // Re-throw the error so specific components can render UI warnings if necessary.
     return Promise.reject(error)
   }
 )

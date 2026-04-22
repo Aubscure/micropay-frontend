@@ -2,34 +2,24 @@
 
 /**
  * Encrypts and decrypts IndexedDB payloads using AES-GCM via Web Crypto API.
- *
- * Why AES-GCM:
- * - Built into every modern browser (no library needed, zero cost)
- * - Authenticated encryption — detects tampering (an attacker can't
- *   silently modify the amount without the decryption failing)
- * - The key is derived from the user's session token so only the
- *   authenticated user can read their own offline queue
+ * The key is derived from a server-issued session nonce held in volatile memory.
  */
 
 /**
- * Derive an AES-GCM key from the user's auth token.
- * The key only exists in memory — never stored anywhere.
+ * Derive an AES-GCM key from the server-issued session nonce.
  *
- * @param {string} token - The user's Sanctum Bearer token
+ * @param {string} keyMaterialString - The session-bound nonce from the server
  * @returns {Promise<CryptoKey>}
  */
-async function deriveKey(token) {
-  // Encode the token as bytes
+async function deriveKey(keyMaterialString) {
   const keyMaterial = await crypto.subtle.importKey(
     'raw',
-    new TextEncoder().encode(token),
+    new TextEncoder().encode(keyMaterialString),
     { name: 'PBKDF2' },
     false,
     ['deriveKey']
   )
 
-  // Derive a 256-bit AES key from the token using PBKDF2
-  // The salt is fixed per-app — in a real system this would be per-user
   return crypto.subtle.deriveKey(
     {
       name: 'PBKDF2',
@@ -48,14 +38,13 @@ async function deriveKey(token) {
  * Encrypt a transaction object before storing in IndexedDB.
  *
  * @param {Object} data - The transaction object to encrypt
- * @param {string} token - User's auth token (used to derive key)
+ * @param {string} nonce - The secure memory nonce
  * @returns {Promise<{iv: string, ciphertext: string}>}
  */
-export async function encryptPayload(data, token) {
-  const key = await deriveKey(token)
+export async function encryptPayload(data, nonce) {
+  const key = await deriveKey(nonce)
 
   // Generate a random 12-byte IV for each encryption operation.
-  // Never reuse an IV with the same key — AES-GCM requires this.
   const iv = crypto.getRandomValues(new Uint8Array(12))
 
   const encoded = new TextEncoder().encode(JSON.stringify(data))
@@ -66,7 +55,6 @@ export async function encryptPayload(data, token) {
     encoded
   )
 
-  // Store IV alongside ciphertext — IV is not secret, just must be unique
   return {
     iv: Array.from(iv).join(','),
     ciphertext: Array.from(new Uint8Array(ciphertext)).join(','),
@@ -75,19 +63,17 @@ export async function encryptPayload(data, token) {
 
 /**
  * Decrypt a stored payload from IndexedDB.
- * Throws if the data has been tampered with (AES-GCM authentication fails).
  *
  * @param {{iv: string, ciphertext: string}} encrypted
- * @param {string} token
+ * @param {string} nonce - The secure memory nonce
  * @returns {Promise<Object>}
  */
-export async function decryptPayload(encrypted, token) {
-  const key = await deriveKey(token)
+export async function decryptPayload(encrypted, nonce) {
+  const key = await deriveKey(nonce)
 
   const iv = new Uint8Array(encrypted.iv.split(',').map(Number))
   const ciphertext = new Uint8Array(encrypted.ciphertext.split(',').map(Number))
 
-  // This will throw DOMException if the data was tampered with
   const decrypted = await crypto.subtle.decrypt(
     { name: 'AES-GCM', iv },
     key,
