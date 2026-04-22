@@ -17,6 +17,9 @@ const apiClient = axios.create({
   // It instructs the browser to attach secure cookies and the X-XSRF-TOKEN 
   // to every cross-origin request automatically.
   withCredentials: true,
+  withXSRFToken: true,
+  xsrfCookieName: 'XSRF-TOKEN',
+  xsrfHeaderName: 'X-XSRF-TOKEN',
 })
 
 /**
