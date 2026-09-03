@@ -74,10 +74,12 @@ async function handleLogin() {
         <p class="text-sm text-red-700 font-medium leading-snug">{{ error }}</p>
       </div>
 
-      <!-- Form card -->
-      <div class="bg-white rounded-[20px] border border-slate-200/80 p-6 space-y-4"
-        style="box-shadow: 0 4px 24px rgba(15,23,42,0.07), 0 1px 2px rgba(15,23,42,0.04)">
-
+<!-- Form card -->
+      <form
+        @submit.prevent="handleLogin"
+        class="bg-white rounded-[20px] border border-slate-200/80 p-6 space-y-4"
+        style="box-shadow: 0 4px 24px rgba(15,23,42,0.07), 0 1px 2px rgba(15,23,42,0.04)"
+      >
         <!-- Email -->
         <div>
           <label for="email" class="block text-[13px] font-semibold text-slate-600 mb-1.5">Email address</label>
@@ -89,6 +91,7 @@ async function handleLogin() {
             autocomplete="username"
             class="auth-input"
             :disabled="loading"
+            required
           />
         </div>
 
@@ -105,13 +108,13 @@ async function handleLogin() {
             autocomplete="current-password"
             class="auth-input"
             :disabled="loading"
-            @keyup.enter="handleLogin"
+            required
           />
         </div>
 
         <!-- Submit -->
         <button
-          @click="handleLogin"
+          type="submit"
           :disabled="loading"
           class="auth-btn w-full mt-1"
           :aria-busy="loading"
@@ -122,7 +125,7 @@ async function handleLogin() {
           </span>
           <span v-else>Sign In →</span>
         </button>
-      </div>
+      </form>
 
       <!-- Register link -->
       <p class="text-center text-[13px] text-slate-400 mt-5">
