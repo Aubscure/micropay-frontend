@@ -7,7 +7,7 @@ import { useAuthStore } from '@/stores/auth'
  * Configured strictly for secure, first-party cookie authentication.
  */
 const apiClient = axios.create({
-  baseURL: import.meta.env.VITE_API_URL,
+  baseURL: '[https://micropay-api.onrender.com/api](https://micropay-api.onrender.com/api)',
 
   headers: {
     'Content-Type': 'application/json',
@@ -15,7 +15,7 @@ const apiClient = axios.create({
   },
 
   // SECURITY MANDATE: This is the linchpin of the new architecture.
-  // It instructs the browser to attach secure cookies and the X-XSRF-TOKEN 
+  // It instructs the browser to attach secure cookies and the X-XSRF-TOKEN
   // to every cross-origin request automatically.
   withCredentials: true,
   withXSRFToken: true,
@@ -54,7 +54,7 @@ apiClient.interceptors.response.use(
   (response) => response,
   (error) => {
     const status = error.response?.status;
-    const isAuthPath = window.location.pathname === '/login' || 
+    const isAuthPath = window.location.pathname === '/login' ||
                        window.location.pathname === '/register';
 
     // 401 (Unauthorized) or 419 (CSRF Mismatch)
