@@ -10,7 +10,7 @@ export function createTransaction(data) {
 }
 
 export function getTransaction(id) {
-  return apiClient.get(`\transactions/${id}`)
+  return apiClient.get(`transactions/${id}`)
 }
 
 export function syncTransactions(transactions) {

@@ -1,22 +1,19 @@
 // src/api/client.js
+// src/api/client.js
 import axios from 'axios'
 import { useAuthStore } from '@/stores/auth'
 
-/**
- * Central Axios instance for all API calls.
- * Configured strictly for secure, first-party cookie authentication.
- */
-const apiClient = axios.create({
-  baseURL: 'https://micropay-api.onrender.com/api',
+// Read from Vite env at build time. Falls back to localhost only for dev
+// convenience; production must always come from VITE_API_URL so a change
+// in Vercel's dashboard is visible in the built bundle after redeploy.
+const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000/api'
 
+const apiClient = axios.create({
+  baseURL: API_BASE_URL,
   headers: {
     'Content-Type': 'application/json',
     'Accept': 'application/json',
   },
-
-  // SECURITY MANDATE: This is the linchpin of the new architecture.
-  // It instructs the browser to attach secure cookies and the X-XSRF-TOKEN
-  // to every cross-origin request automatically.
   withCredentials: true,
   withXSRFToken: true,
   xsrfCookieName: 'XSRF-TOKEN',

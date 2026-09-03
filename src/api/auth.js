@@ -6,17 +6,12 @@ import apiClient from './client'
  * This MUST be called before any state-changing auth requests.
  */
 export async function fetchCsrfCookie() {
-  // 1) Establish/refresh the session cookie with the backend (Sanctum).
-  await apiClient.get('/sanctum/csrf-cookie', {
-    baseURL: 'https://micropay-api.onrender.com',
-  });
+  // Strip the trailing /api segment to hit the root-level sanctum route.
+  const rootURL = apiClient.defaults.baseURL.replace(/\/api\/?$/, '')
+  await apiClient.get('/sanctum/csrf-cookie', { baseURL: rootURL })
 
-  // 2) Cross-site fallback: fetch a session-bound CSRF token as JSON.
-  // Needed when the browser blocks JS access to the XSRF-TOKEN cookie on a different TLD.
-  const { data } = await apiClient.get('auth/csrf');
-
-  // 3) Send the token on subsequent state-changing requests.
-  apiClient.defaults.headers.common['X-CSRF-TOKEN'] = data.csrf_token;
+  const { data } = await apiClient.get('auth/csrf')
+  apiClient.defaults.headers.common['X-CSRF-TOKEN'] = data.csrf_token
 }
 
 
