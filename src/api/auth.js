@@ -8,7 +8,7 @@ import apiClient from './client'
 export async function fetchCsrfCookie() {
   // 1) Establish/refresh the session cookie with the backend (Sanctum).
   await apiClient.get('/sanctum/csrf-cookie', {
-    baseURL: '[https://micropay-api.onrender.com/api](https://micropay-api.onrender.com/api)'.replace(/\/api\/?$/, '')
+    baseURL: 'https://micropay-api.onrender.com',
   });
 
   // 2) Cross-site fallback: fetch a session-bound CSRF token as JSON.

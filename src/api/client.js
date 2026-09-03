@@ -7,7 +7,7 @@ import { useAuthStore } from '@/stores/auth'
  * Configured strictly for secure, first-party cookie authentication.
  */
 const apiClient = axios.create({
-  baseURL: '[https://micropay-api.onrender.com/api](https://micropay-api.onrender.com/api)',
+  baseURL: 'https://micropay-api.onrender.com/api',
 
   headers: {
     'Content-Type': 'application/json',
