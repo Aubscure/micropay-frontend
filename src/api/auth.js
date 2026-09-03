@@ -8,12 +8,12 @@ import apiClient from './client'
 export async function fetchCsrfCookie() {
   // 1) Establish/refresh the session cookie with the backend (Sanctum).
   await apiClient.get('/sanctum/csrf-cookie', {
-    baseURL: import.meta.env.VITE_API_URL.replace(/\/api\/?$/, '') 
+    baseURL: import.meta.env.VITE_API_URL.replace(/\/api\/?$/, '')
   });
 
   // 2) Cross-site fallback: fetch a session-bound CSRF token as JSON.
   // Needed when the browser blocks JS access to the XSRF-TOKEN cookie on a different TLD.
-  const { data } = await apiClient.get('/auth/csrf');
+  const { data } = await apiClient.get('auth/csrf');
 
   // 3) Send the token on subsequent state-changing requests.
   apiClient.defaults.headers.common['X-CSRF-TOKEN'] = data.csrf_token;
@@ -22,7 +22,7 @@ export async function fetchCsrfCookie() {
 
 export async function register(data) {
   await fetchCsrfCookie();
-  const response = await apiClient.post('/auth/register', data);
+  const response = await apiClient.post('auth/register', data);
   // Session regeneration can rotate the CSRF token; re-sync immediately.
   await fetchCsrfCookie();
   return response;
@@ -30,16 +30,16 @@ export async function register(data) {
 
 export async function login(data) {
   await fetchCsrfCookie();
-  const response = await apiClient.post('/auth/login', data);
+  const response = await apiClient.post('auth/login', data);
   // Session regeneration can rotate the CSRF token; re-sync immediately.
   await fetchCsrfCookie();
   return response;
 }
 
 export async function logout() {
-  return apiClient.post('/auth/logout');
+  return apiClient.post('auth/logout');
 }
 
 export function getMe() {
-  return apiClient.get('/auth/me');
+  return apiClient.get('auth/me');
 }
