@@ -5,7 +5,7 @@ import { login, register, logout, getMe } from '@/api/auth'
 import { getMyMerchant, createMerchant } from '@/api/merchants'
 
 export const useAuthStore = defineStore('auth', () => {
-  // State 
+  // State
   // Memory only. Completely removed localStorage dependencies to prevent state desynchronization.
   const user     = ref(null)
   const merchant = ref(null)
@@ -13,32 +13,36 @@ export const useAuthStore = defineStore('auth', () => {
   const error    = ref(null)
   const token    = ref(null)
 
-  // Getters 
+  // Getters
   // Authentication is now strictly derived from the presence of a validated user object.
   const isAuthenticated = computed(() => !!user.value)
   const hasMerchant     = computed(() => !!merchant.value)
 
-  // Actions 
+  // Actions
 
   /**
    * The Source of Truth Bootstrapper.
    * Calls the backend to verify the secure cookie and retrieve the user.
    * This must be called when the frontend application initializes.
    */
-  async function fetchUser() {
-    try {
-      const response = await getMe()
-      user.value = response.data.user
-      await loadMerchant()
-      return true
-    } catch (err) {
-      // If the backend rejects the cookie, clear all reactive state immediately.
+async function fetchUser() {
+  try {
+    const response = await getMe()
+    user.value = response.data.user
+    await loadMerchant()
+    return true
+  } catch (err) {
+    // Only wipe state on a CONFIRMED rejection from the server (401/419).
+    // A network failure (no response at all) means we simply don't know
+    // the session's status yet — don't destroy the offline nonce over it.
+    if (err.response) {
       user.value = null
       merchant.value = null
       token.value = null
-      return false
     }
+    return false
   }
+}
 
   /**
    * Log in user using the secure CSRF handshake.
@@ -56,7 +60,7 @@ async function loginUser(credentials) {
 
     // 1b. Store fallback token (used when cookie sessions aren't stable cross-domain).
     token.value = response.data.token ?? null
-    
+
     // 2. TRUST BUT VERIFY: Explicitly fetch the user profile using the new session cookie.
     // If this fails, it means the browser blocked the cookie or the session died.
     const isVerified = await fetchUser()
@@ -87,7 +91,7 @@ async function registerUser(data) {
   try {
     const response = await register(data)
     token.value = response.data.token ?? null
-    
+
     // TRUST BUT VERIFY
     const isVerified = await fetchUser()
 
@@ -123,7 +127,7 @@ async function registerUser(data) {
     try {
       const response = await getMyMerchant()
       const merchants = response.data.data
-      
+
       if (merchants && merchants.length > 0) {
         merchant.value = merchants[0]
       } else {
