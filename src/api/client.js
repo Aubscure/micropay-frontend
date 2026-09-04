@@ -20,6 +20,20 @@ const apiClient = axios.create({
   xsrfHeaderName: 'X-XSRF-TOKEN',
 })
 
+apiClient.interceptors.request.use((config) => {
+  try {
+    const auth = useAuthStore()
+    const token = auth?.token
+    if (token) {
+      config.headers = config.headers ?? {}
+      config.headers.Authorization = `Bearer ${token}`
+    }
+  } catch {
+    // Store may not be initialized yet (boot order); ignore safely.
+  }
+  return config
+})
+
 apiClient.interceptors.response.use(
   (response) => response,
   (error) => {
@@ -37,32 +51,6 @@ apiClient.interceptors.response.use(
       import('@/router').then(({ default: router }) => {
         router.push({ name: 'login' })
       });
-    }
-
-    return Promise.reject(error);
-  }
-)
-
-/**
- * Response Interceptor
- * Handles global architectural rejections securely.
- */
-// src/api/client.js
-
-// src/api/client.js
-apiClient.interceptors.response.use(
-  (response) => response,
-  (error) => {
-    const status = error.response?.status;
-    const isAuthPath = window.location.pathname === '/login' ||
-                       window.location.pathname === '/register';
-
-    // 401 (Unauthorized) or 419 (CSRF Mismatch)
-    if ((status === 401 || status === 419) && !isAuthPath) {
-      // Only clear cache and redirect if NOT already on an auth page
-      localStorage.removeItem('auth_user');
-      localStorage.removeItem('auth_merchant');
-      window.location.href = '/login';
     }
 
     return Promise.reject(error);
