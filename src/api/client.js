@@ -20,25 +20,28 @@ const apiClient = axios.create({
   xsrfHeaderName: 'X-XSRF-TOKEN',
 })
 
-/**
- * Request Interceptor
- * The Authorization Bearer injection logic has been completely eradicated.
- */
-apiClient.interceptors.request.use((config) => {
-  // Primary auth remains cookie-based.
-  // Fallback: attach Sanctum token if present (cross-domain session instability).
-  try {
-    const auth = useAuthStore()
-    const token = auth?.token?.value ?? auth?.token ?? null
-    if (token) {
-      config.headers = config.headers ?? {}
-      config.headers.Authorization = `Bearer ${token}`
+apiClient.interceptors.response.use(
+  (response) => response,
+  (error) => {
+    const status = error.response?.status;
+    const isAuthPath = window.location.pathname === '/login' ||
+                       window.location.pathname === '/register';
+
+    if ((status === 401 || status === 419) && !isAuthPath) {
+      localStorage.removeItem('auth_user');
+      localStorage.removeItem('auth_merchant');
+
+      // Use router navigation instead of a hard reload. This lets any
+      // in-flight offline sync (IndexedDB reads/writes) finish naturally
+      // instead of being cut off mid-operation by a full page unload.
+      import('@/router').then(({ default: router }) => {
+        router.push({ name: 'login' })
+      });
     }
-  } catch {
-    // Store may not be initialized yet (boot order); ignore safely.
+
+    return Promise.reject(error);
   }
-  return config
-})
+)
 
 /**
  * Response Interceptor
