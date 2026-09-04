@@ -1,5 +1,4 @@
 // src/api/client.js
-// src/api/client.js
 import axios from 'axios'
 import { useAuthStore } from '@/stores/auth'
 
@@ -20,6 +19,13 @@ const apiClient = axios.create({
   xsrfHeaderName: 'X-XSRF-TOKEN',
 })
 
+/**
+ * Request Interceptor
+ * Attaches the bearer token as a fallback auth path. Required because
+ * SameSite=Lax session cookies are excluded from cross-site subrequests
+ * (vercel.app -> onrender.com is cross-site), so cookie-only auth silently
+ * fails on every request except a full top-level navigation.
+ */
 apiClient.interceptors.request.use((config) => {
   try {
     const auth = useAuthStore()
@@ -34,6 +40,11 @@ apiClient.interceptors.request.use((config) => {
   return config
 })
 
+/**
+ * Response Interceptor
+ * Uses router navigation instead of a hard reload, so an in-flight
+ * offline sync isn't cut off mid-operation by a full page unload.
+ */
 apiClient.interceptors.response.use(
   (response) => response,
   (error) => {
@@ -45,9 +56,6 @@ apiClient.interceptors.response.use(
       localStorage.removeItem('auth_user');
       localStorage.removeItem('auth_merchant');
 
-      // Use router navigation instead of a hard reload. This lets any
-      // in-flight offline sync (IndexedDB reads/writes) finish naturally
-      // instead of being cut off mid-operation by a full page unload.
       import('@/router').then(({ default: router }) => {
         router.push({ name: 'login' })
       });
