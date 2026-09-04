@@ -3,12 +3,10 @@
 import { ref, onMounted } from 'vue'
 import { RouterView } from 'vue-router'
 import router from '@/router'
+import { useNetworkStatus } from '@/composables/useNetworkStatus'
 
-// router.isReady() resolves once the FIRST navigation (including the
-// beforeEach guard's fetchUser() call) has finished, success or fail.
-// Until then, nothing meaningful exists to route to, so show a splash
-// screen instead of leaving RouterView to render empty.
 const ready = ref(false)
+const { isSyncing, pendingSyncCount } = useNetworkStatus()
 
 onMounted(async () => {
   await router.isReady()
@@ -23,7 +21,22 @@ onMounted(async () => {
     <p class="boot-text">Connecting to server…</p>
     <p class="boot-subtext">This can take a minute if the server's been idle</p>
   </div>
-  <RouterView v-else />
+
+  <template v-else>
+    <!-- Global sync banner — shows on every route while queued offline
+         transactions are being sent, regardless of which page triggered it -->
+    <div
+      v-if="isSyncing"
+      class="sync-bar"
+      role="status"
+      aria-live="polite"
+    >
+      <span class="sync-spinner" aria-hidden="true"></span>
+      <span>Syncing {{ pendingSyncCount }} offline payment{{ pendingSyncCount === 1 ? '' : 's' }}…</span>
+    </div>
+
+    <RouterView />
+  </template>
 </template>
 
 <style scoped>
@@ -39,7 +52,6 @@ onMounted(async () => {
   position: relative;
   overflow: hidden;
 }
-
 .boot-orb {
   position: absolute;
   width: 420px; height: 420px;
@@ -49,7 +61,6 @@ onMounted(async () => {
   background: radial-gradient(circle, rgba(52,211,153,0.18) 0%, transparent 70%);
   pointer-events: none;
 }
-
 .boot-spinner {
   width: 40px; height: 40px;
   border: 3px solid rgba(16,185,129,0.15);
@@ -57,21 +68,37 @@ onMounted(async () => {
   border-radius: 50%;
   animation: spin 0.8s linear infinite;
 }
+.boot-text { font-size: 0.95rem; font-weight: 600; color: #1e293b; }
+.boot-subtext { font-size: 0.8rem; color: #94a3b8; }
 
-.boot-text {
-  font-size: 0.95rem;
-  font-weight: 600;
-  color: #1e293b;
+/* Sync banner — sits above everything, same emerald language as the rest of the app */
+.sync-bar {
+  position: sticky;
+  top: 0;
+  z-index: 60;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 8px 12px;
+  background: linear-gradient(135deg, #10B981 0%, #059669 100%);
+  color: #fff;
+  font-family: 'Plus Jakarta Sans', system-ui, sans-serif;
+  font-size: 0.78rem;
+  font-weight: 700;
 }
-
-.boot-subtext {
-  font-size: 0.8rem;
-  color: #94a3b8;
+.sync-spinner {
+  width: 13px; height: 13px;
+  border: 2px solid rgba(255,255,255,0.35);
+  border-top-color: #fff;
+  border-radius: 50%;
+  animation: spin 0.7s linear infinite;
+  flex-shrink: 0;
 }
 
 @keyframes spin { to { transform: rotate(360deg); } }
 
 @media (prefers-reduced-motion: reduce) {
-  .boot-spinner { animation: none; }
+  .boot-spinner, .sync-spinner { animation: none; }
 }
 </style>
