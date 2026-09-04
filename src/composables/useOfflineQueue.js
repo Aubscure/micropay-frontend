@@ -3,6 +3,7 @@
 import { ref } from 'vue'
 import { encryptPayload, decryptPayload } from '@/utils/crypto'
 import { useAuthStore } from '@/stores/auth'
+import { readPersistedNonce } from '@/utils/nonceStorage'
 
 const DB_NAME = 'micropay_offline'
 const DB_VERSION = 1
@@ -16,7 +17,7 @@ function openDatabase() {
       const db = event.target.result
       if (!db.objectStoreNames.contains(STORE_NAME)) {
         const store = db.createObjectStore(STORE_NAME, {
-          keyPath: 'id', 
+          keyPath: 'id',
         })
         store.createIndex('status', 'status', { unique: false })
       }
@@ -36,8 +37,9 @@ export function useOfflineQueue() {
    */
   function getSecureNonce() {
     const authStore = useAuthStore()
-    const nonce = authStore.user?.offline_encryption_nonce
-    
+    // Fall back to the persisted copy if Pinia state was wiped by a reload.
+    const nonce = authStore.user?.offline_encryption_nonce ?? readPersistedNonce()
+
     if (!nonce) {
       throw new Error('Security Violation: Cannot read or write to offline queue without an active session.')
     }
@@ -46,7 +48,7 @@ export function useOfflineQueue() {
 
   async function addToQueue(transaction) {
     const db = await openDatabase()
-    
+
     // Will throw and abort the operation if memory is wiped
     const nonce = getSecureNonce()
 
@@ -57,10 +59,10 @@ export function useOfflineQueue() {
       const store = tx.objectStore(STORE_NAME)
 
       const record = {
-        id:        transaction.id,   
-        status:    'queued',         
+        id:        transaction.id,
+        status:    'queued',
         queued_at: new Date().toISOString(),
-        payload:   encrypted,        
+        payload:   encrypted,
       }
 
       const request = store.put(record)
@@ -72,7 +74,7 @@ export function useOfflineQueue() {
 
   async function getQueue() {
     const db = await openDatabase()
-    
+
     // Will throw and abort if memory is wiped
     const nonce = getSecureNonce()
 
@@ -80,7 +82,7 @@ export function useOfflineQueue() {
       const tx = db.transaction(STORE_NAME, 'readonly')
       const store = tx.objectStore(STORE_NAME)
       const index = store.index('status')
-      
+
       const request = index.getAll('queued')
 
       request.onsuccess = async () => {
@@ -118,9 +120,9 @@ export function useOfflineQueue() {
   }
 
   return {
-    pendingCount, 
-    addToQueue,   
-    getQueue,     
-    removeFromQueue 
+    pendingCount,
+    addToQueue,
+    getQueue,
+    removeFromQueue
   }
 }

@@ -3,6 +3,7 @@ import { ref, computed } from 'vue'
 import { defineStore } from 'pinia'
 import { login, register, logout, getMe } from '@/api/auth'
 import { getMyMerchant, createMerchant } from '@/api/merchants'
+import { persistNonce, clearPersistedNonce } from '@/utils/nonceStorage'
 
 export const useAuthStore = defineStore('auth', () => {
   // State
@@ -29,16 +30,16 @@ async function fetchUser() {
   try {
     const response = await getMe()
     user.value = response.data.user
+    // Cache the nonce outside Pinia so a reload while offline can still read it.
+    persistNonce(response.data.user?.offline_encryption_nonce)
     await loadMerchant()
     return true
   } catch (err) {
-    // Only wipe state on a CONFIRMED rejection from the server (401/419).
-    // A network failure (no response at all) means we simply don't know
-    // the session's status yet — don't destroy the offline nonce over it.
     if (err.response) {
       user.value = null
       merchant.value = null
       token.value = null
+      clearPersistedNonce()
     }
     return false
   }
@@ -150,6 +151,7 @@ async function registerUser(data) {
       user.value     = null
       merchant.value = null
       token.value    = null
+      clearPersistedNonce()
     }
   }
 
